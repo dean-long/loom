@@ -1119,6 +1119,8 @@ void NullCheckEliminator::handle_AccessMonitor(AccessMonitor* x) {
       tty->print_cr("Eliminated AccessMonitor %d's null check for value %d", x->id(), obj->id());
     }
     x->set_needs_null_check(false);
+  } else if (ObjectMonitorMode::java()) {
+    assert(JOMDebugC1BOL, "why are we here?"); 
   } else {
     set_put(obj);
     if (PrintNullCheckElimination) {

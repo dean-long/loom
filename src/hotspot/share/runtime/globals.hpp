@@ -1712,6 +1712,12 @@ const int ObjectAlignmentInBytes = 8;
   product(bool, UseNewCode3, false, DIAGNOSTIC,                             \
           "Testing Only: Use the new version while testing")                \
                                                                             \
+  product(bool, JOMDebugC1BOL, false, DIAGNOSTIC,                           \
+          "Testing Only: Use the new version while testing")                \
+                                                                            \
+  product(int, ProfileJOMCalls, 0, DIAGNOSTIC,                              \
+          "Testing Only: Use the new version while testing")                \
+                                                                            \
   notproduct(bool, UseDebuggerErgo, false,                                  \
           "Debugging Only: Adjust the VM to be more debugger-friendly. "    \
           "Turns on the other UseDebuggerErgo* flags")                      \

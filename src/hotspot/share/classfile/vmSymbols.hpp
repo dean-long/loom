@@ -396,13 +396,13 @@
   template(asPrimitive_int_signature,                 "(I)Ljava/lang/LiveStackFrame$PrimitiveSlot;") \
   template(asPrimitive_long_signature,                "(J)Ljava/lang/LiveStackFrame$PrimitiveSlot;") \
                                                                                                   \
-  /* Support for dynamic lookup of Java Object Monitor methods */                                                   \
+  /* Support for dynamic lookup of Java Object Monitor methods */                                 \
   template(wait_name,                                 "wait")                                     \
   template(notify_name,                               "notify")                                   \
   template(getMonitorPolicy_name,                     "getMonitorPolicy")                         \
   template(hasLockedObject_name,                      "hasLockedObject")                          \
-  template(abort_name,                                "abort")                                   \
-  template(abortException_name,                        "abortException")                         \
+  template(abort_name,                                "abort0")                                   \
+  template(abortException_name,                       "abortException")                           \
   template(log_exitAll_name,                          "log_exitAll")                              \
                                                                                                   \
   /* common method and field names */                                                             \
@@ -611,6 +611,8 @@
   template(vthread_signature,                         "Ljava/lang/VirtualThread;")                \
   template(object_void_signature,                     "(Ljava/lang/Object;)V")                    \
   template(object_int_signature,                      "(Ljava/lang/Object;)I")                    \
+  template(object_int_void_signature,                 "(Ljava/lang/Object;I)V")                   \
+  template(object_int_int_signature,                  "(Ljava/lang/Object;I)I")                   \
   template(long_object_long_signature,                "(JLjava/lang/Object;)J")                   \
   template(object_long_int_signature,                 "(Ljava/lang/Object;J)I")                   \
   template(object_long_void_signature,                "(Ljava/lang/Object;J)V")                   \
@@ -621,6 +623,7 @@
   template(string_int_signature,                      "(Ljava/lang/String;)I")                    \
   template(string_byte_array_signature,               "(Ljava/lang/String;)[B")                   \
   template(string_bool_byte_array_signature,          "(Ljava/lang/String;Z)[B")                  \
+  template(string_object_void_signature,              "(Ljava/lang/String;Ljava/lang/Object;)V")  \
   template(string_throwable_void_signature,           "(Ljava/lang/String;Ljava/lang/Throwable;)V") \
   template(throwable_signature,                       "Ljava/lang/Throwable;")                    \
   template(throwable_void_signature,                  "(Ljava/lang/Throwable;)V")                 \

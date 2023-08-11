@@ -497,6 +497,9 @@ JVM_END
 
 JVM_ENTRY(void, JVM_FillInStackTrace(JNIEnv *env, jobject receiver))
   Handle exception(thread, JNIHandles::resolve_non_null(receiver));
+#if 1
+  assert(!exception->is_a(vmClasses::IllegalMonitorStateException_klass()), "");
+#endif
   java_lang_Throwable::fill_in_stack_trace(exception);
 JVM_END
 
@@ -684,6 +687,9 @@ JVM_LEAF(jint, JVM_MonitorPolicy())
   return ObjectMonitorMode::as_int();
 JVM_END
 
+JVM_LEAF(void, JVM_FillInLockRecord(JNIEnv* env, jclass unused, jint index, jobject obj, jint pos))
+JVM_END
+
 JVM_ENTRY(jobject, JVM_Clone(JNIEnv* env, jobject handle))
   Handle obj(THREAD, JNIHandles::resolve_non_null(handle));
   Klass* klass = obj->klass();
@@ -747,7 +753,7 @@ JVM_END
 
 // java.lang.Monitor //////////////////////////////////////////////////////////
 
-JVM_ENTRY(void, JVM_Monitor_abort(JNIEnv* env, jclass jc, jstring estr))
+JVM_ENTRY(void, JVM_Monitor_abort(JNIEnv* env, jclass jc, jstring estr, jobject obj))
   ResourceMark rm(thread);
   Handle es(thread, JNIHandles::resolve_non_null(estr));
   char* str = java_lang_String::as_utf8_string(es());

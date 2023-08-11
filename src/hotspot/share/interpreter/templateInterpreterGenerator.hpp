@@ -52,7 +52,7 @@ class TemplateInterpreterGenerator: public AbstractInterpreterGenerator {
   address generate_exception_handler_common(const char* name, const char* message, bool pass_oop);
   address generate_ClassCastException_handler();
   address generate_ArrayIndexOutOfBounds_handler();
-  address generate_return_entry_for_monitor(int step);
+  address generate_return_entry_for_monitor(Bytecodes::Code code, bool from_compiled, address continuation);
   address generate_return_entry_for(TosState state, int step, size_t index_size);
   address generate_earlyret_entry_for(TosState state);
   address generate_deopt_entry_for(TosState state, int step, address continuation = nullptr);
@@ -100,7 +100,6 @@ class TemplateInterpreterGenerator: public AbstractInterpreterGenerator {
   address generate_CRC32C_updateBytes_entry(AbstractInterpreter::MethodKind kind);
   address generate_currentThread();
 #ifdef AMD64
-  address generate_caller_frame_id();
   address generate_get_lock_state();
   address generate_cas_lock_state();
 #endif

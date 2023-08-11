@@ -126,6 +126,10 @@ class GraphBuilder {
     // Exception handlers list to be used for this scope
     XHandlers* xhandlers() const;
 
+#ifdef ASSERT
+    int depth_in_work_list(BlockBegin* block) const;
+#endif
+
     // How to get a block to be parsed
     void add_to_work_list(BlockBegin* block);
     // How to remove the next block to be parsed; returns null if none left
@@ -134,7 +138,11 @@ class GraphBuilder {
     bool is_work_list_empty() const;
 
     ciBytecodeStream* stream()                     { return _stream;            }
-    void set_stream(ciBytecodeStream* stream)      { _stream = stream;          }
+    void set_stream(ciBytecodeStream* stream)
+    {
+      assert(stream == nullptr || stream->method() == scope()->method(), ""); 
+      _stream = stream;
+    }
 
     intx max_inline_size() const                   { return _max_inline_size;   }
 
@@ -170,6 +178,11 @@ class GraphBuilder {
 
     bool ignore_return() const                     { return _ignore_return;          }
     void set_ignore_return(bool ignore_return)     { _ignore_return = ignore_return; }
+   private:
+    Value             _sync_receiver;              // receiver object (local 0) for non-static sync methods
+   public:
+    Value sync_receiver() const         { return _sync_receiver; }
+    void  set_sync_receiver(Value recv) { _sync_receiver = recv; }
   };
 
   // for all GraphBuilders
@@ -183,14 +196,13 @@ class GraphBuilder {
   const char*       _inline_bailout_msg;         // non-null if most recent inline attempt failed
   int               _instruction_count;          // for bailing out in pathological jsr/ret cases
   BlockBegin*       _start;                      // the start block
-  BlockBegin*       _osr_entry;                  // the osr entry block block
-  ValueStack*       _initial_state;              // The state for the start block
 
   // for each call to connect_to_end; can also be set by inliner
   BlockBegin*       _block;                      // the current block
   ValueStack*       _state;                      // the current execution state
   Instruction*      _last;                       // the last instruction added
   bool              _skip_block;                 // skip processing of the rest of this block
+  bool              _fall_through;               // continue processing next bci in the same block
 
   // accessors
   ScopeData*        scope_data() const           { return _scope_data; }
@@ -209,6 +221,7 @@ class GraphBuilder {
   Bytecodes::Code   code() const                 { return stream()->cur_bc(); }
   int               bci() const                  { return stream()->cur_bci(); }
   int               next_bci() const             { return stream()->next_bci(); }
+  Value             sync_receiver() const        { return scope_data()->sync_receiver(); }
 
   // unified bailout support
   void bailout(const char* msg) const            { compilation()->bailout(msg); }
@@ -256,15 +269,18 @@ class GraphBuilder {
   void method_return(Value x, bool ignore_return = false);
   void call_register_finalizer();
   void access_field(Bytecodes::Code code);
-  void invoke(Bytecodes::Code code);
+  bool invoke(ciMethod* target, ciKlass* holder, ciSignature* declared_signature,
+              bool will_link, Bytecodes::Code code, Bytecodes::Code bc_raw, int bci,
+              BlockBegin* continuation = nullptr);
+  bool invoke(Bytecodes::Code code);
   void new_instance(int klass_index);
   void new_type_array();
   void new_object_array();
   void check_cast(int klass_index);
   void instance_of(int klass_index);
-  void invoke_monitor(Value x, int bci, Bytecodes::Code code);
-//  void monitorenter(Value x, int bci);
-//  void monitorexit(Value x, int bci);
+  void invoke_monitor(Value x, int bci, Bytecodes::Code code, int count, bool needs_cont);
+  void monitorenter(Value x, int bci);
+  void monitorexit(Value x, int bci);
   void new_multi_array(int dimensions);
   void throw_op(int bci);
   Value round_fp(Value fp_value);
@@ -351,9 +367,9 @@ class GraphBuilder {
   void build_graph_for_intrinsic(ciMethod* callee, bool ignore_return);
 
   // inliners
-  bool try_inline(           ciMethod* callee, bool holder_known, bool ignore_return, Bytecodes::Code bc = Bytecodes::_illegal, Value receiver = nullptr);
+  bool try_inline(           ciMethod* callee, bool holder_known, bool ignore_return, Bytecodes::Code bc = Bytecodes::_illegal, Value receiver = nullptr, BlockBegin* continuation = nullptr);
   bool try_inline_intrinsics(ciMethod* callee, bool ignore_return = false);
-  bool try_inline_full(      ciMethod* callee, bool holder_known, bool ignore_return, Bytecodes::Code bc = Bytecodes::_illegal, Value receiver = nullptr);
+  bool try_inline_full(      ciMethod* callee, bool holder_known, bool ignore_return, Bytecodes::Code bc = Bytecodes::_illegal, Value receiver = nullptr, BlockBegin* continuation = nullptr);
   bool try_inline_jsr(int jsr_dest_bci);
 
   const char* check_can_parse(ciMethod* callee) const;
@@ -365,12 +381,12 @@ class GraphBuilder {
   // helpers
   void inline_bailout(const char* msg);
   BlockBegin* header_block(BlockBegin* entry, BlockBegin::Flag f, ValueStack* state);
-  BlockBegin* setup_start_block(int osr_bci, BlockBegin* std_entry, BlockBegin* osr_entry, ValueStack* init_state);
+  BlockBegin* setup_start_block(BlockBegin* std_entry);
   void setup_osr_entry_block();
   void clear_inline_bailout();
   ValueStack* state_at_entry();
-  void push_root_scope(IRScope* scope, BlockList* bci2block, BlockBegin* start);
-  void push_scope(ciMethod* callee, BlockBegin* continuation);
+  void push_root_scope(IRScope* scope, BlockList* bci2block);
+  void push_scope(ciMethod* callee, BlockBegin* continuation, Value recv);
   void push_scope_for_jsr(BlockBegin* jsr_continuation, int jsr_dest_bci);
   void pop_scope();
   void pop_scope_for_jsr();

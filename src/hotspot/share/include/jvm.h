@@ -87,11 +87,15 @@ JVM_MonitorPolicy(void);
 JNIEXPORT jobject JNICALL
 JVM_Clone(JNIEnv *env, jobject obj);
 
+// JOM TODO: move to Monitor or MonitorSupport?
+JNIEXPORT void JNICALL
+JVM_FillInLockRecord(JNIEnv* env, jclass unused, jint index, jobject obj, jint pos);
+
 /*
  * java.lang.Monitor
  */
 JNIEXPORT void JNICALL
-JVM_Monitor_abort(JNIEnv* env, jclass ignored, jstring estr);
+JVM_Monitor_abort(JNIEnv* env, jclass ignored, jstring estr, jobject obj);
 
 JNIEXPORT void JNICALL
 JVM_Monitor_abortException(JNIEnv* env, jclass ignored, jstring estr, jthrowable t);

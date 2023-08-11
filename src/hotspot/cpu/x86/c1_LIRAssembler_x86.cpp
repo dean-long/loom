@@ -453,8 +453,15 @@ int LIR_Assembler::emit_unwind_handler() {
   MonitorExitStub* stub = nullptr;
   if (method()->is_synchronized()) {
     monitor_address(0, FrameMap::rax_opr);
-    stub = new MonitorExitStub(FrameMap::rax_opr, true, 0);
-    if (LockingMode == LM_MONITOR) {
+#if 1
+    if (JOMDebugC1BOL) {
+      __ movptr(rsi, Address(rax, BasicObjectLock::obj_offset()));
+    } else {
+      assert(false, "need obj oop!");
+    }
+#endif
+    stub = new MonitorExitStub(FrameMap::rsi_opr, FrameMap::rax_opr, true, 0);
+    if (LockingMode == LM_MONITOR || ObjectMonitorMode::java()) {
       __ jmp(*stub->entry());
     } else {
       __ unlock_object(rdi, rsi, rax, *stub->entry());

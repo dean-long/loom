@@ -422,6 +422,13 @@ address AbstractInterpreter::deopt_continue_after_entry(Method* method, address 
         break;
       }
 
+    case Bytecodes::_monitorenter:
+    case Bytecodes::_monitorexit:
+      if (ObjectMonitorMode::java()) {
+        assert(!is_top_frame, "monitor op not inlined?");
+        return code == Bytecodes::_monitorenter ? Interpreter::monitor_enter_return_entry_adr()
+                                                : Interpreter::monitor_exit_return_entry_adr();
+      }
     default:
       type = Bytecodes::result_type(code);
       break;

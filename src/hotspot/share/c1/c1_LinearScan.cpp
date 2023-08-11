@@ -2465,9 +2465,12 @@ OopMap* LinearScan::compute_oop_map(IntervalWalker* iw, LIR_Op* op, CodeEmitInfo
 
   // add oops from lock stack
   assert(info->stack() != nullptr, "CodeEmitInfo must always have a stack");
-  int locks_count = info->stack()->total_locks_size();
-  for (int i = 0; i < locks_count; i++) {
-    set_oop(map, frame_map()->monitor_object_regname(i));
+
+  if (!ObjectMonitorMode::java() || JOMDebugC1BOL) {
+    int locks_count = info->stack()->total_locks_size();
+    for (int i = 0; i < locks_count; i++) {
+      set_oop(map, frame_map()->monitor_object_regname(i));
+    }
   }
 
   return map;
@@ -2528,6 +2531,13 @@ void LinearScan::init_compute_debug_info() {
 }
 
 MonitorValue* LinearScan::location_for_monitor_index(int monitor_index) {
+#if 1
+  if (ObjectMonitorMode::java() && !JOMDebugC1BOL) {
+    ScopeValue* object_scope_value = new ConstantOopWriteValue(nullptr);
+    Location loc = Location::new_stk_loc(Location::invalid, 0);
+    return new MonitorValue(object_scope_value, loc);
+  }
+#endif
   Location loc;
   if (!frame_map()->location_for_monitor_object(monitor_index, &loc)) {
     bailout("too large frame");

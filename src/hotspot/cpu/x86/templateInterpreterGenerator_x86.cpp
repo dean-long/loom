@@ -256,7 +256,9 @@ address TemplateInterpreterGenerator::generate_return_entry_for(TosState state, 
   return entry;
 }
 
-address TemplateInterpreterGenerator::generate_return_entry_for_monitor(int step) {
+address TemplateInterpreterGenerator::generate_return_entry_for_monitor(
+  Bytecodes::Code code, bool from_compiled, address continuation)
+{
   assert(ObjectMonitorMode::java(), "must be");
   address entry = __ pc();
 
@@ -270,12 +272,25 @@ address TemplateInterpreterGenerator::generate_return_entry_for_monitor(int step
   __ restore_bcp();
   __ restore_locals();
 
-  __ pop(rax);
-
-  // clear system java
-  __ decrementl(Address(r15_thread, JavaThread::system_java_offset()), 1);
-
-  __ dispatch_next(vtos, step, false);
+  // This assumes monitorenter and exit both have the same args size.
+  // FIXME: pass in Method* or ars size.
+  //   __ lea(rsp, Address(rsp, -parm_size * Interpreter::stackElementScale()));
+  //
+  if (from_compiled) {
+    //  compiled entry points have 2 args
+    __ pop_i();
+    __ pop_ptr();
+  } else {
+    __ pop(rax);
+    // clear system java
+    __ decrementl(Address(r15_thread, JavaThread::system_java_offset()), 1);
+  }
+  if (continuation == nullptr) {
+    int step = Bytecodes::length_for(code);
+    __ dispatch_next(vtos, step);
+  } else {
+    __ jump_to_entry(continuation);
+  }
 
   return entry;
 }

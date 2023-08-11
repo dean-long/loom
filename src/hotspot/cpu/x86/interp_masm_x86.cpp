@@ -2190,8 +2190,12 @@ void InterpreterMacroAssembler::java_lock_object() {
   ExternalAddress fetch_addr((address) Universe::object_monitorEnter_addr());
   movptr(method, fetch_addr);
 
+#if 1
+if (ProfileJOMCalls > 1) {
   profile_call(rax);
   profile_arguments_type(rax, rbx, LP64_ONLY(r13) NOT_LP64(rsi), false);
+}
+#endif
 
   jump_from_interpreted(rbx, rdx);
 
@@ -2260,8 +2264,12 @@ void InterpreterMacroAssembler::java_unlock_object(Register lock_reg) {
   ExternalAddress fetch_addr((address) Universe::object_monitorExit_addr());
   movptr(method, fetch_addr);
 
+#if 1
+if (ProfileJOMCalls > 1) {
   profile_call(rax);
   profile_arguments_type(rax, rbx, LP64_ONLY(r13) NOT_LP64(rsi), false);
+}
+#endif
 
   jump_from_interpreted(rbx, rdx);
 
@@ -2314,8 +2322,12 @@ void InterpreterMacroAssembler::java_unlock_all_objects() {
   ExternalAddress fetch_addr((address) Universe::object_monitorExitAll_addr());
   movptr(method, fetch_addr);
 
+#if 0
+if (ProfileJOMCalls > 2) {
   profile_call(rax);
   profile_arguments_type(rax, rbx, LP64_ONLY(r13) NOT_LP64(rsi), false);
+}
+#endif
 
   jump_from_interpreted(rbx, rdx);
 

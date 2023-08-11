@@ -126,10 +126,31 @@ void TemplateInterpreterGenerator::generate_all() {
 
   if (ObjectMonitorMode::java()) {
     CodeletMark cm(_masm, "monitor return entry points");
+
     Interpreter::_monitor_enter_return_entry =
-      generate_return_entry_for_monitor(Bytecodes::length_for(Bytecodes::_monitorenter));
+      generate_return_entry_for_monitor(Bytecodes::_monitorenter, false, nullptr);
     Interpreter::_monitor_exit_return_entry =
-      generate_return_entry_for_monitor(Bytecodes::length_for(Bytecodes::_monitorexit));
+      generate_return_entry_for_monitor(Bytecodes::_monitorexit, false, nullptr);
+
+    Interpreter::_compiled_prologue_monitor_enter_entry =
+      generate_return_entry_for_monitor(Bytecodes::_monitorenter, true, nullptr);
+
+    address aentry = Interpreter::_normal_table.entry(Bytecodes::_areturn).entry(vtos);
+    address ientry = Interpreter::_normal_table.entry(Bytecodes::_ireturn).entry(vtos);
+    address lentry = Interpreter::_normal_table.entry(Bytecodes::_lreturn).entry(vtos);
+    address fentry = Interpreter::_normal_table.entry(Bytecodes::_freturn).entry(vtos);
+    address dentry = Interpreter::_normal_table.entry(Bytecodes::_dreturn).entry(vtos);
+    address ventry = Interpreter::_normal_table.entry(Bytecodes::_return).entry(vtos);
+
+    Interpreter::_compiled_epilogue_monitor_exit_entry =
+      EntryPoint(
+        generate_return_entry_for_monitor(Bytecodes::_monitorexit, true, aentry),
+        generate_return_entry_for_monitor(Bytecodes::_monitorexit, true, ientry),
+        generate_return_entry_for_monitor(Bytecodes::_monitorexit, true, lentry),
+        generate_return_entry_for_monitor(Bytecodes::_monitorexit, true, fentry),
+        generate_return_entry_for_monitor(Bytecodes::_monitorexit, true, dentry),
+        generate_return_entry_for_monitor(Bytecodes::_monitorexit, true, ventry)
+      );
   }
 
   { CodeletMark cm(_masm, "earlyret entry points");

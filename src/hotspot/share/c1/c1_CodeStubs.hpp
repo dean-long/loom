@@ -375,12 +375,14 @@ class MonitorExitStub: public MonitorAccessStub {
   int  _monitor_ix;
 
  public:
-  MonitorExitStub(LIR_Opr lock_reg, bool compute_lock, int monitor_ix)
-    : MonitorAccessStub(LIR_OprFact::illegalOpr, lock_reg),
+  MonitorExitStub(LIR_Opr obj_reg, LIR_Opr lock_reg, bool compute_lock, int monitor_ix)
+    : MonitorAccessStub(obj_reg, lock_reg),
       _compute_lock(compute_lock), _monitor_ix(monitor_ix) { }
   virtual void emit_code(LIR_Assembler* e);
   virtual void visit(LIR_OpVisitState* visitor) {
-    assert(_obj_reg->is_illegal(), "unused");
+    if (!_obj_reg->is_illegal()) {
+      visitor->do_input(_obj_reg);
+    }
     if (_compute_lock) {
       visitor->do_temp(_lock_reg);
     } else {

@@ -1132,25 +1132,20 @@ Handle SharedRuntime::find_callee_info_helper(vframeStream& vfst, Bytecodes::Cod
   }
 
   Bytecode_invoke bytecode(caller, bci);
-#ifndef C2_PATCH
-  int bytecode_index = bytecode.index();
-#endif
   bc = bytecode.invoke_code();
 
-#ifdef C2_PATCH
+#if 1
   if (bc == Bytecodes::_monitorexit) {
     bc = Bytecodes::_invokestatic;
-    LinkResolver::resolve_monitorexit(callinfo, bc, CHECK_NH);
+    LinkResolver::resolve_monitorexit(callinfo, CHECK_NH);
     return receiver;
   } else if (bc == Bytecodes::_monitorenter) {
     bc = Bytecodes::_invokestatic;
-    LinkResolver::resolve_monitorenter(callinfo, bc, CHECK_NH);
+    LinkResolver::resolve_monitorenter(callinfo, CHECK_NH);
     return receiver;
   }
-
-  int bytecode_index = bytecode.index();
-
 #endif
+
   methodHandle attached_method(current, extract_attached_method(vfst));
   if (attached_method.not_null()) {
     Method* callee = bytecode.static_target(CHECK_NH);
@@ -1218,6 +1213,8 @@ Handle SharedRuntime::find_callee_info_helper(vframeStream& vfst, Bytecodes::Cod
       THROW_(vmSymbols::java_lang_NullPointerException(), nullHandle);
     }
   }
+
+  int bytecode_index = bytecode.index();
 
   // Resolve method
   if (attached_method.not_null()) {
@@ -2268,6 +2265,13 @@ void SharedRuntime::monitor_exit_helper(oopDesc* obj, BasicLock* lock, JavaThrea
   assert(JavaThread::current() == current, "invariant");
   // Exit must be non-blocking, and therefore no exceptions can be thrown.
   ExceptionMark em(current);
+#if 1
+  if (ObjectMonitorMode::java()) {
+    assert(ObjectMonitorMode::java_only(), "caller wants Java or legacy?");
+    ObjectSynchronizer::java_exit(Handle(current, obj), nullptr, current);
+    return;
+  }
+#endif
   // The object could become unlocked through a JNI call, which we have no other checks for.
   // Give a fatal message if CheckJNICalls. Otherwise we ignore it.
   if (obj->is_unlocked()) {

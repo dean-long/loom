@@ -100,7 +100,18 @@ vframe* vframe::sender() const {
   if (_fr.is_entry_frame() && _fr.is_first_frame()) return nullptr;
   frame s = _fr.real_sender(&temp_map);
   if (s.is_first_frame()) return nullptr;
-  return vframe::new_vframe(&s, &temp_map, thread());
+
+  vframe* vf = vframe::new_vframe(&s, &temp_map, thread());
+#if 1
+  // XXX FIXME define javaVFrame::sender instead
+  if (is_java_frame()) {
+    const javaVFrame* jvf = javaVFrame::cast(this);
+    if (register_map()->monitors()) {
+      vf->add_locks(jvf->monitors()->length());
+    }
+  }
+#endif
+  return vf;
 }
 
 bool vframe::is_vthread_entry() const {
@@ -281,6 +292,9 @@ GrowableArray<MonitorInfo*>* interpretedVFrame::monitors() const {
     for (BasicObjectLock* current = (fr().previous_monitor_in_interpreter_frame(fr().interpreter_frame_monitor_begin()));
         current >= fr().interpreter_frame_monitor_end();
         current = fr().previous_monitor_in_interpreter_frame(current)) {
+#if 1
+// XXX verify against JOM lock stack
+#endif
       result->push(new MonitorInfo(current->obj(), current->lock(), false, false));
     }
   }

@@ -1318,13 +1318,14 @@ OopMapSet* Runtime1::generate_code_for(StubID id, StubAssembler* sasm) {
 
         // Called with store_parameter and not C abi
 
-        f.load_argument(0, rax); // rax,: lock address
+        f.load_argument(1, rax); // rax,: object
+        f.load_argument(0, rbx); // rbx,: lock address
 
         // note: really a leaf routine but must setup last java sp
         //       => use call_RT for now (speed can be improved by
         //       doing last java sp setup manually)
-        int call_offset = __ call_RT(noreg, noreg, CAST_FROM_FN_PTR(address, monitorexit), rax);
-
+        auto func = ObjectMonitorMode::java() ? monitorexit_java : monitorexit;
+        int call_offset = __ call_RT(noreg, noreg, CAST_FROM_FN_PTR(address, func), rax, rbx);
         oop_maps = new OopMapSet();
         oop_maps->add_gc_map(call_offset, map);
         restore_live_registers(sasm, save_fpu_registers);

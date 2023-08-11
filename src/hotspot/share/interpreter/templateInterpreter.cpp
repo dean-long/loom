@@ -223,6 +223,8 @@ EntryPoint TemplateInterpreter::_safept_entry;
 address TemplateInterpreter::_invoke_return_entry[TemplateInterpreter::number_of_return_addrs];
 address TemplateInterpreter::_monitor_enter_return_entry;
 address TemplateInterpreter::_monitor_exit_return_entry;
+address TemplateInterpreter::_compiled_prologue_monitor_enter_entry;
+EntryPoint TemplateInterpreter::_compiled_epilogue_monitor_exit_entry;
 address TemplateInterpreter::_invokeinterface_return_entry[TemplateInterpreter::number_of_return_addrs];
 address TemplateInterpreter::_invokedynamic_return_entry[TemplateInterpreter::number_of_return_addrs];
 

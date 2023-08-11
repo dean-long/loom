@@ -29,6 +29,7 @@
 #include "c1/c1_LIR.hpp"
 #include "c1/c1_ValueType.hpp"
 #include "ci/ciField.hpp"
+#include "runtime/synchronizer.hpp"
 
 // Predefined classes
 class ciField;
@@ -1496,7 +1497,7 @@ LEAF(MonitorEnter, AccessMonitor)
   }
 
   // generic
-  virtual bool can_trap() const                  { return true; }
+  virtual bool can_trap() const                  { return DEBUG_ONLY(!ObjectMonitorMode::java()) NOT_DEBUG(true); }
 };
 
 
@@ -2106,18 +2107,23 @@ LEAF(Throw, BlockEnd)
 LEAF(Base, BlockEnd)
  public:
   // creation
-  Base(BlockBegin* std_entry, BlockBegin* osr_entry) : BlockEnd(illegalType, nullptr, false) {
+  Base(BlockBegin* std_entry) : BlockEnd(illegalType, nullptr, false) {
     assert(std_entry->is_set(BlockBegin::std_entry_flag), "std entry must be flagged");
-    assert(osr_entry == nullptr || osr_entry->is_set(BlockBegin::osr_entry_flag), "osr entry must be flagged");
     BlockList* s = new BlockList(2);
-    if (osr_entry != nullptr) s->append(osr_entry);
-    s->append(std_entry); // must be default sux!
+    s->append(std_entry);
     set_sux(s);
   }
 
   // accessors
-  BlockBegin* std_entry() const                  { return default_sux(); }
-  BlockBegin* osr_entry() const                  { return number_of_sux() < 2 ? nullptr : sux_at(0); }
+  BlockBegin* std_entry() const                  { return sux_at(0); }
+  BlockBegin* osr_entry() const                  { return number_of_sux() < 2 ? nullptr : default_sux(); }
+  void set_osr_entry(BlockBegin* osr_entry)      {
+    assert(osr_entry->is_set(BlockBegin::osr_entry_flag), "osr entry must be flagged");
+    assert(number_of_sux() == 1, "osr_entry already set");
+    sux()->append(osr_entry); // default_sux
+    sux_at(1)->add_predecessor(block());
+    assert(this->osr_entry() == osr_entry, "");
+  }
 };
 
 

@@ -43,6 +43,11 @@ ScopeDesc::ScopeDesc(const CompiledMethod* code, PcDesc* pd, bool ignore_objects
   _has_ea_local_in_scope = ignore_objects ? false : pd->has_ea_local_in_scope();
   _arg_escape    = ignore_objects ? false : pd->arg_escape();
   decode_body();
+  _in_monitor_enter = false;
+  _in_monitor_exit  = false;
+#ifdef ASSERT
+  _can_trust_lock_stack = true;
+#endif
 }
 
 
@@ -56,6 +61,12 @@ void ScopeDesc::initialize(const ScopeDesc* parent, int decode_offset) {
   _has_ea_local_in_scope = parent->has_ea_local_in_scope();
   _arg_escape    = false;
   decode_body();
+  _in_monitor_enter = parent->method() == Universe::object_compiledMonitorEnter_method();
+  _in_monitor_exit  = parent->method() == Universe::object_compiledMonitorExit_method();
+#ifdef ASSERT
+  _can_trust_lock_stack = parent->_can_trust_lock_stack && !_in_monitor_enter && !_in_monitor_exit;
+  assert(_bci >= 0 || _in_monitor_enter || _in_monitor_exit, "");
+#endif
 }
 
 ScopeDesc::ScopeDesc(const ScopeDesc* parent) {
@@ -63,6 +74,10 @@ ScopeDesc::ScopeDesc(const ScopeDesc* parent) {
 }
 
 ScopeDesc::ScopeDesc(const ScopeDesc* parent, int decode_offset) {
+#if 1
+  assert(false, "FIXME");
+  assert(parent->_sender_decode_offset == decode_offset, "FIXME: in monitor op?");
+#endif
   initialize(parent, decode_offset);
 }
 

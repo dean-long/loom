@@ -139,7 +139,7 @@ void java_lang_MonitorSupport::register_natives(TRAPS) {
                           vmSymbols::int_void_signature(),
                           (address) &JVM_Monitor_log_exitAll, THREAD);
   Method::register_native(obj, vmSymbols::abort_name(),
-                          vmSymbols::string_void_signature(),
+                          vmSymbols::string_object_void_signature(),
                           (address) &JVM_Monitor_abort, THREAD);
   Method::register_native(obj, vmSymbols::abortException_name(),
                           vmSymbols::string_throwable_void_signature(),
@@ -171,6 +171,8 @@ void java_lang_Object::register_natives(TRAPS) {
                           vmSymbols::object_void_signature(), (address) &JVM_MonitorEnter, THREAD);
   Method::register_native(obj, vmSymbols::monitorExit0_name(),
                           vmSymbols::object_void_signature(), (address) &JVM_MonitorExit, THREAD);
+  Method::register_native(obj, vmSymbols::fillInLockRecord_name(),
+                          vmSymbols::fillInLockRecord_signature(), (address) &JVM_FillInLockRecord, THREAD);
 }
 
 int JavaClasses::compute_injected_offset(InjectedFieldID id) {
@@ -1604,6 +1606,7 @@ int java_lang_Thread::_continuation_offset;
 int java_lang_Thread::_park_blocker_offset;
 int java_lang_Thread::_scopedValueBindings_offset;
 JFR_ONLY(int java_lang_Thread::_jfr_epoch_offset;)
+int java_lang_Thread::_lock_stack_offset;
 int java_lang_Thread::_lock_stack_pos_offset;
 
 #define THREAD_FIELDS_DO(macro) \
@@ -1617,6 +1620,7 @@ int java_lang_Thread::_lock_stack_pos_offset;
   macro(_park_blocker_offset,  k, "parkBlocker", object_signature, false); \
   macro(_continuation_offset,  k, "cont", continuation_signature, false); \
   macro(_scopedValueBindings_offset, k, "scopedValueBindings", object_signature, false); \
+  macro(_lock_stack_offset,    k, "lockStack", object_array_signature, false); \
   macro(_lock_stack_pos_offset,k, "lockStackPos", int_signature, false)
 
 void java_lang_Thread::compute_offsets() {
@@ -1690,6 +1694,14 @@ int java_lang_Thread::is_in_VTMS_transition_offset() {
 void java_lang_Thread::clear_scopedValueBindings(oop java_thread) {
   assert(java_thread != nullptr, "need a java_lang_Thread pointer here");
   java_thread->obj_field_put(_scopedValueBindings_offset, nullptr);
+}
+
+objArrayOop java_lang_Thread::lock_stack(oop java_thread) {
+  return objArrayOop(java_thread->obj_field(lock_stack_offset()));
+}
+
+int java_lang_Thread::lock_stack_pos(oop java_thread) {
+  return java_thread->int_field(lock_stack_pos_offset());
 }
 
 oop java_lang_Thread::holder(oop java_thread) {

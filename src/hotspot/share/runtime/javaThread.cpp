@@ -210,6 +210,17 @@ void JavaThread::clear_scopedValueBindings() {
   }
 }
 
+objArrayOop JavaThread::java_lock_stack() const {
+  oop vthread_oop = vthread();
+  return java_lang_Thread::lock_stack(vthread_oop);
+}
+
+int JavaThread::java_lock_stack_pos() const {
+  oop vthread_oop = vthread();
+  return java_lang_Thread::lock_stack_pos(vthread_oop);
+}
+
+
 void JavaThread::allocate_threadObj(Handle thread_group, const char* thread_name,
                                     bool daemon, TRAPS) {
   assert(thread_group.not_null(), "thread group should be specified");

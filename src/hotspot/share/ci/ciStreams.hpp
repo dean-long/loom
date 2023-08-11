@@ -103,15 +103,15 @@ public:
   void reset_to_bci( int bci );
 
   // Force the iterator to report a certain bci.
-  void force_bci(int bci);
+  void force_bci(int bci, Bytecodes::Code code = EOBC());
 
   void set_max_bci( int max ) {
     _end = _start + max;
   }
 
   address cur_bcp() const       { return _bc_start; }  // Returns bcp to current instruction
-  int next_bci() const          { return _pc - _start; }
-  int cur_bci() const           { return _bc_start - _start; }
+  int next_bci() const          { assert(cur_bci() >= 0, ""); return _pc - _start; }
+  int cur_bci() const           { assert(_bc_start != nullptr, ""); return _bc_start - _start; }
   int instruction_size() const  { return _pc - _bc_start; }
 
   Bytecodes::Code cur_bc() const{ return check_java(_bc); }
@@ -290,9 +290,6 @@ public:
   ciKlass*      get_declared_method_holder();
   int           get_method_holder_index();
   int           get_method_signature_index(const constantPoolHandle& cpool);
-
-  ciMethod*     get_monitor_method(bool& will_link, ciSignature* *declared_signature_result, bool enter);
-  ciKlass*      get_monitor_holder(bool enter);
 };
 
 
