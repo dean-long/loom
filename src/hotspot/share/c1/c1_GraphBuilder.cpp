@@ -1292,8 +1292,11 @@ void GraphBuilder::increment() {
 
 
 void GraphBuilder::_goto(int from_bci, int to_bci) {
+#if 1
+  assert(from_bci == bci(), "");
+#endif
   Goto *x = new Goto(block_at(to_bci), to_bci <= from_bci);
-  if (is_profiling()) {
+  if (is_profiling() && from_bci >= 0) {
     compilation()->set_would_profile(true);
     x->set_profiled_bci(bci());
     if (profile_branches()) {
@@ -1632,7 +1635,10 @@ void GraphBuilder::method_return(Value x, bool ignore_return) {
     // released before we jump to the continuation block.
     if (method()->is_synchronized()) {
       assert(state()->locks_size() == 1, "receiver must be locked here");
-      invoke_monitor(state()->lock_at(0), SynchronizationEntryBCI, Bytecodes::_monitorexit);
+      Value receiver = method()->is_static() ?
+        append(new Constant(new InstanceConstant(method()->holder()->java_mirror()))) :
+        _initial_state->local_at(0);
+      monitorexit(receiver, SynchronizationEntryBCI);
     }
 
     if (need_mem_bar) {
@@ -1660,6 +1666,9 @@ void GraphBuilder::method_return(Value x, bool ignore_return) {
       set_inline_cleanup_info();
     }
 
+#if 1
+// XXX This doesn't sound right, try callee bci?
+#endif
     // The current bci() is in the wrong scope, so use the bci() of
     // the continuation point.
     append_with_bci(goto_callee, scope_data()->continuation()->bci());
@@ -1670,13 +1679,16 @@ void GraphBuilder::method_return(Value x, bool ignore_return) {
   state()->truncate_stack(0);
   if (method()->is_synchronized()) {
     // perform the unlocking before exiting the method
-    Value receiver;
-    if (!method()->is_static()) {
-      receiver = _initial_state->local_at(0);
-    } else {
-      receiver = append(new Constant(new ClassConstant(method()->holder())));
-    }
-    append_split(new MonitorExit(receiver, state()->unlock()));
+    assert(state()->locks_size() == 1, "receiver must be locked here");
+
+    Value receiver = method()->is_static() ?
+      append(new Constant(new InstanceConstant(method()->holder()->java_mirror()))) :
+      _initial_state->local_at(0);
+#if 1
+    receiver->print();
+#endif
+    // Might be better to jump to common code rather than inline at every return
+    monitorexit(receiver, SynchronizationEntryBCI);
   }
 
   if (need_mem_bar) {
@@ -1925,339 +1937,16 @@ Values* GraphBuilder::collect_args_for_profiling(Values* args, ciMethod* target,
   return obj_args;
 }
 
-void GraphBuilder::invoke_monitor(Value x, int bci, Bytecodes::Code code) {
-  bool will_link;
 
-  ciSignature* declared_signature = NULL;
-  ciMethod*    target;
-  ciKlass*     holder;
-  const Bytecodes::Code bc_raw = Bytecodes::_invokestatic; //stream()->cur_bc_raw();
-  
-  target = stream()->get_monitor_method(will_link, &declared_signature, code == Bytecodes::_monitorenter);
-  holder = stream()->get_monitor_holder(code == Bytecodes::_monitorenter);
 
-  assert(declared_signature != NULL, "cannot be null");
-  assert(will_link == target->is_loaded(), "");
-  JFR_ONLY(Jfr::on_resolution(this, holder, target); CHECK_BAILOUT();)
-
-  ciInstanceKlass* klass = target->holder();
-  assert(!target->is_loaded() || klass->is_loaded(), "loaded target must imply loaded klass");
-
-  // check if CHA possible: if so, change the code to invoke_special
-  ciInstanceKlass* calling_klass = method()->holder();
-  ciInstanceKlass* callee_holder = ciEnv::get_instance_klass_for_declared_method_holder(holder);
-  ciInstanceKlass* actual_recv = callee_holder;
-
-  CompileLog* log = compilation()->log();
-  if (log != NULL)
-      log->elem("call method='%d' instr='%s'",
-                log->identify(target),
-                Bytecodes::name(code));
-
-  // Some methods are obviously bindable without any type checks so
-  // convert them directly to an invokespecial or invokestatic.
-  if (target->is_loaded() && !target->is_abstract() && target->can_be_statically_bound()) {
-    switch (bc_raw) {
-    case Bytecodes::_invokeinterface:
-    assert(false, "Here");
-      // convert to invokespecial if the target is the private interface method.
-      if (target->is_private()) {
-        assert(holder->is_interface(), "How did we get a non-interface method here!");
-        code = Bytecodes::_invokespecial;
-      }
-      break;
-    case Bytecodes::_invokevirtual:
-    assert(false, "Here");
-      code = Bytecodes::_invokespecial;
-      break;
-    case Bytecodes::_invokehandle:
-    assert(false, "Here");
-      code = target->is_static() ? Bytecodes::_invokestatic : Bytecodes::_invokespecial;
-      break;
-    default:
-      break;
-    }
-  } else {
-    if (bc_raw == Bytecodes::_invokehandle) {
-      assert(false, "Here");
-      assert(!will_link, "should come here only for unlinked call");
-      code = Bytecodes::_invokespecial;
-    }
-  }
-
-  if (code == Bytecodes::_invokespecial) {
-    assert(false, "Here");
-    // Additional receiver subtype checks for interface calls via invokespecial or invokeinterface.
-    ciKlass* receiver_constraint = nullptr;
-
-    if (bc_raw == Bytecodes::_invokeinterface) {
-      receiver_constraint = holder;
-    } else if (bc_raw == Bytecodes::_invokespecial && !target->is_object_initializer() && calling_klass->is_interface()) {
-      receiver_constraint = calling_klass;
-    }
-
-    if (receiver_constraint != nullptr) {
-      int index = state()->stack_size() - (target->arg_size_no_receiver() + 1);
-      Value receiver = state()->stack_at(index);
-      CheckCast* c = new CheckCast(receiver_constraint, receiver, copy_state_before());
-      // go to uncommon_trap when checkcast fails
-      c->set_invokespecial_receiver_check();
-      state()->stack_at_put(index, append_split(c));
-    }
-  }
-
-  // Push appendix argument (MethodType, CallSite, etc.), if one.
-  /*bool patch_for_appendix = false;
-  int patching_appendix_arg = 0;
-  if (Bytecodes::has_optional_appendix(bc_raw) && (!will_link || PatchALot)) {
-    Value arg = append(new Constant(new ObjectConstant(compilation()->env()->unloaded_ciinstance()), copy_state_before()));
-    apush(arg);
-    patch_for_appendix = true;
-    patching_appendix_arg = (will_link && stream()->has_appendix()) ? 0 : 1;
-  } else if (stream()->has_appendix()) {
-    ciObject* appendix = stream()->get_appendix();
-    Value arg = append(new Constant(new ObjectConstant(appendix)));
-    apush(arg);
-  }*/
-
-  ciMethod* cha_monomorphic_target = NULL;
-  ciMethod* exact_target = NULL;
-  Value better_receiver = NULL;
-  if (UseCHA && DeoptC1 && target->is_loaded() &&
-      !(// %%% FIXME: Are both of these relevant?
-        target->is_method_handle_intrinsic() ||
-        target->is_compiled_lambda_form()) &&
-      true) {
-    Value receiver = NULL;
-    ciInstanceKlass* receiver_klass = NULL;
-    bool type_is_exact = false;
-    // try to find a precise receiver type
-    if (will_link && !target->is_static()) {
-      assert(false, "Here");
-      int index = state()->stack_size() - (target->arg_size_no_receiver() + 1);
-      receiver = state()->stack_at(index);
-      ciType* type = receiver->exact_type();
-      if (type != NULL && type->is_loaded() &&
-          type->is_instance_klass() && !type->as_instance_klass()->is_interface()) {
-        receiver_klass = (ciInstanceKlass*) type;
-        type_is_exact = true;
-      }
-      if (type == NULL) {
-        type = receiver->declared_type();
-        if (type != NULL && type->is_loaded() &&
-            type->is_instance_klass() && !type->as_instance_klass()->is_interface()) {
-          receiver_klass = (ciInstanceKlass*) type;
-          if (receiver_klass->is_leaf_type() && !receiver_klass->is_final()) {
-            // Insert a dependency on this type since
-            // find_monomorphic_target may assume it's already done.
-            dependency_recorder()->assert_leaf_type(receiver_klass);
-            type_is_exact = true;
-          }
-        }
-      }
-    }
-    if (receiver_klass != NULL && type_is_exact &&
-        receiver_klass->is_loaded() && code != Bytecodes::_invokespecial) {
-      assert(false, "Here");
-      // If we have the exact receiver type we can bind directly to
-      // the method to call.
-      exact_target = target->resolve_invoke(calling_klass, receiver_klass);
-      if (exact_target != NULL) {
-        target = exact_target;
-        code = Bytecodes::_invokespecial;
-      }
-    }
-    if (receiver_klass != NULL &&
-        receiver_klass->is_subtype_of(actual_recv) &&
-        actual_recv->is_initialized()) {
-      actual_recv = receiver_klass;
-      assert(false, "Here");
-    }
-
-    if ((code == Bytecodes::_invokevirtual && callee_holder->is_initialized()) ||
-        (code == Bytecodes::_invokeinterface && callee_holder->is_initialized() && !actual_recv->is_interface())) {
-      // Use CHA on the receiver to select a more precise method.
-      assert(false, "Here");
-      cha_monomorphic_target = target->find_monomorphic_target(calling_klass, callee_holder, actual_recv);
-    } else if (code == Bytecodes::_invokeinterface && callee_holder->is_loaded() && receiver != NULL) {
-      assert(callee_holder->is_interface(), "invokeinterface to non interface?");
-      assert(false, "Here");
-      // If there is only one implementor of this interface then we
-      // may be able bind this invoke directly to the implementing
-      // klass but we need both a dependence on the single interface
-      // and on the method we bind to.  Additionally since all we know
-      // about the receiver type is the it's supposed to implement the
-      // interface we have to insert a check that it's the class we
-      // expect.  Interface types are not checked by the verifier so
-      // they are roughly equivalent to Object.
-      // The number of implementors for declared_interface is less or
-      // equal to the number of implementors for target->holder() so
-      // if number of implementors of target->holder() == 1 then
-      // number of implementors for decl_interface is 0 or 1. If
-      // it's 0 then no class implements decl_interface and there's
-      // no point in inlining.
-      ciInstanceKlass* declared_interface = callee_holder;
-      ciInstanceKlass* singleton = declared_interface->unique_implementor();
-      if (singleton != NULL) {
-        assert(singleton != declared_interface, "not a unique implementor");
-        cha_monomorphic_target = target->find_monomorphic_target(calling_klass, declared_interface, singleton);
-        if (cha_monomorphic_target != NULL) {
-          if (cha_monomorphic_target->holder() != compilation()->env()->Object_klass()) {
-            ciInstanceKlass* holder = cha_monomorphic_target->holder();
-            ciInstanceKlass* constraint = (holder->is_subtype_of(singleton) ? holder : singleton); // avoid upcasts
-            actual_recv = declared_interface;
-
-            // insert a check it's really the expected class.
-            CheckCast* c = new CheckCast(constraint, receiver, copy_state_for_exception());
-            c->set_incompatible_class_change_check();
-            c->set_direct_compare(constraint->is_final());
-            // pass the result of the checkcast so that the compiler has
-            // more accurate type info in the inlinee
-            better_receiver = append_split(c);
-
-            dependency_recorder()->assert_unique_implementor(declared_interface, singleton);
-          } else {
-            cha_monomorphic_target = NULL; // subtype check against Object is useless
-          }
-        }
-      }
-    }
-  }
-
-  if (cha_monomorphic_target != NULL) {
-      assert(false, "Here");
-    assert(!target->can_be_statically_bound() || target == cha_monomorphic_target, "");
-    assert(!cha_monomorphic_target->is_abstract(), "");
-    if (!cha_monomorphic_target->can_be_statically_bound(actual_recv)) {
-      // If we inlined because CHA revealed only a single target method,
-      // then we are dependent on that target method not getting overridden
-      // by dynamic class loading.  Be sure to test the "static" receiver
-      // dest_method here, as opposed to the actual receiver, which may
-      // falsely lead us to believe that the receiver is final or private.
-      dependency_recorder()->assert_unique_concrete_method(actual_recv, cha_monomorphic_target, callee_holder, target);
-    }
-    code = Bytecodes::_invokespecial;
-  }
-
-  // check if we could do inlining
-  if (!PatchALot && Inline && target->is_loaded() && true &&
-      callee_holder->is_loaded()) { // the effect of symbolic reference resolution
-
-    // callee is known => check if we have static binding
-    if ((code == Bytecodes::_invokestatic && klass->is_initialized()) || // invokestatic involves an initialization barrier on declaring class
-        code == Bytecodes::_invokespecial ||
-        (code == Bytecodes::_invokevirtual && target->is_final_method()) ||
-        code == Bytecodes::_invokedynamic) {
-      // static binding => check if callee is ok
-      ciMethod* inline_target = (cha_monomorphic_target != NULL) ? cha_monomorphic_target : target;
-      bool holder_known = (cha_monomorphic_target != NULL) || (exact_target != NULL);
-      bool success = try_inline(inline_target, holder_known, false /* ignore_return */, code, better_receiver);
-
-      CHECK_BAILOUT();
-      clear_inline_bailout();
-
-      if (success) {
-        // Register dependence if JVMTI has either breakpoint
-        // setting or hotswapping of methods capabilities since they may
-        // cause deoptimization.
-        if (compilation()->env()->jvmti_can_hotswap_or_post_breakpoint()) {
-          dependency_recorder()->assert_evol_method(inline_target);
-        }
-        return;
-      }
-    } else {
-      print_inlining(target, "no static binding", /*success*/ false);
-    }
-  } else {
-    print_inlining(target, "not inlineable", /*success*/ false);
-  }
-
-  // If we attempted an inline which did not succeed because of a
-  // bailout during construction of the callee graph, the entire
-  // compilation has to be aborted. This is fairly rare and currently
-  // seems to only occur for jasm-generated classes which contain
-  // jsr/ret pairs which are not associated with finally clauses and
-  // do not have exception handlers in the containing method, and are
-  // therefore not caught early enough to abort the inlining without
-  // corrupting the graph. (We currently bail out with a non-empty
-  // stack at a ret in these situations.)
-  CHECK_BAILOUT();
-
-  // inlining not successful => standard invoke
-  ValueType* result_type = as_ValueType(declared_signature->return_type());
-  ValueStack* state_before = copy_state_exhandling();
-
-  // The bytecode (code) might change in this method so we are checking this very late.
-  const bool has_receiver =
-    code == Bytecodes::_invokespecial   ||
-    code == Bytecodes::_invokevirtual   ||
-    code == Bytecodes::_invokeinterface;
-  // Values* args = state()->pop_arguments(target->arg_size_no_receiver() + patching_appendix_arg);
-  Values* args = new Values(code == Bytecodes::_monitorenter ? 1 : 0); 
-  if (code == Bytecodes::_monitorenter) {
-    args->push(x);
-  }
-  Value recv = NULL; //has_receiver ? apop() : NULL;
-
-  // A null check is required here (when there is a receiver) for any of the following cases
-  // - invokespecial, always need a null check.
-  // - invokevirtual, when the target is final and loaded. Calls to final targets will become optimized
-  //   and require null checking. If the target is loaded a null check is emitted here.
-  //   If the target isn't loaded the null check must happen after the call resolution. We achieve that
-  //   by using the target methods unverified entry point (see CompiledIC::compute_monomorphic_entry).
-  //   (The JVM specification requires that LinkageError must be thrown before a NPE. An unloaded target may
-  //   potentially fail, and can't have the null check before the resolution.)
-  // - A call that will be profiled. (But we can't add a null check when the target is unloaded, by the same
-  //   reason as above, so calls with a receiver to unloaded targets can't be profiled.)
-  //
-  // Normal invokevirtual will perform the null check during lookup
-
-  bool need_null_check = (code == Bytecodes::_invokespecial) ||
-      (target->is_loaded() && (target->is_final_method() || (is_profiling() && profile_calls())));
-
-  if (need_null_check) {
-    if (recv != NULL) {
-      null_check(recv);
-    }
-
-    if (is_profiling()) {
-      // Note that we'd collect profile data in this method if we wanted it.
-      compilation()->set_would_profile(true);
-
-      if (profile_calls()) {
-        assert(cha_monomorphic_target == NULL || exact_target == NULL, "both can not be set");
-        ciKlass* target_klass = NULL;
-        if (cha_monomorphic_target != NULL) {
-          target_klass = cha_monomorphic_target->holder();
-        } else if (exact_target != NULL) {
-          target_klass = exact_target->holder();
-        }
-        profile_call(target, recv, target_klass, collect_args_for_profiling(args, NULL, false), false);
-      }
-    }
-  }
-
-  Invoke* result = new Invoke(code, result_type, recv, args, target, state_before);
-  // push result
-  append_with_bci(result, bci);
-
-  if (result_type != voidType) {
-    push(result_type, round_fp(result));
-  }
-  if (profile_return() && result_type->is_object_kind()) {
-    profile_return_type(result, target);
-  }
-}
-
-void GraphBuilder::invoke(Bytecodes::Code code) {
-  bool will_link;
-  ciSignature* declared_signature = nullptr;
-  ciMethod*             target = stream()->get_method(will_link, &declared_signature);
-  ciKlass*              holder = stream()->get_declared_method_holder();
-  const Bytecodes::Code bc_raw = stream()->cur_bc_raw();
+bool GraphBuilder::invoke(ciMethod* target, ciKlass* holder,
+                          ciSignature* declared_signature,
+                          bool will_link,
+                          Bytecodes::Code code,
+                          Bytecodes::Code bc_raw,
+                          int bci)
+{
   assert(declared_signature != nullptr, "cannot be null");
-  assert(will_link == target->is_loaded(), "");
-  JFR_ONLY(Jfr::on_resolution(this, holder, target); CHECK_BAILOUT();)
 
   ciInstanceKlass* klass = target->holder();
   assert(!target->is_loaded() || klass->is_loaded(), "loaded target must imply loaded klass");
@@ -2316,7 +2005,7 @@ void GraphBuilder::invoke(Bytecodes::Code code) {
       CheckCast* c = new CheckCast(receiver_constraint, receiver, copy_state_before());
       // go to uncommon_trap when checkcast fails
       c->set_invokespecial_receiver_check();
-      state()->stack_at_put(index, append_split(c));
+      state()->stack_at_put(index, append_with_bci(c, bci));
     }
   }
 
@@ -2422,7 +2111,7 @@ void GraphBuilder::invoke(Bytecodes::Code code) {
             c->set_direct_compare(constraint->is_final());
             // pass the result of the checkcast so that the compiler has
             // more accurate type info in the inlinee
-            better_receiver = append_split(c);
+            better_receiver = append_with_bci(c, bci);
 
             dependency_recorder()->assert_unique_implementor(declared_interface, singleton);
           } else {
@@ -2461,7 +2150,7 @@ void GraphBuilder::invoke(Bytecodes::Code code) {
       bool holder_known = (cha_monomorphic_target != nullptr) || (exact_target != nullptr);
       bool success = try_inline(inline_target, holder_known, false /* ignore_return */, code, better_receiver);
 
-      CHECK_BAILOUT();
+      CHECK_BAILOUT_(false);
       clear_inline_bailout();
 
       if (success) {
@@ -2471,7 +2160,7 @@ void GraphBuilder::invoke(Bytecodes::Code code) {
         if (compilation()->env()->jvmti_can_hotswap_or_post_breakpoint()) {
           dependency_recorder()->assert_evol_method(inline_target);
         }
-        return;
+        return success;
       }
     } else {
       print_inlining(target, "no static binding", /*success*/ false);
@@ -2489,7 +2178,7 @@ void GraphBuilder::invoke(Bytecodes::Code code) {
   // therefore not caught early enough to abort the inlining without
   // corrupting the graph. (We currently bail out with a non-empty
   // stack at a ret in these situations.)
-  CHECK_BAILOUT();
+  CHECK_BAILOUT_(false);
 
   // inlining not successful => standard invoke
   ValueType* result_type = as_ValueType(declared_signature->return_type());
@@ -2524,7 +2213,7 @@ void GraphBuilder::invoke(Bytecodes::Code code) {
       null_check(recv);
     }
 
-    if (is_profiling()) {
+    if (is_profiling() && bci >= 0) {
       // Note that we'd collect profile data in this method if we wanted it.
       compilation()->set_would_profile(true);
 
@@ -2543,7 +2232,7 @@ void GraphBuilder::invoke(Bytecodes::Code code) {
 
   Invoke* result = new Invoke(code, result_type, recv, args, target, state_before);
   // push result
-  append_split(result);
+  append_with_bci(result, bci);
 
   if (result_type != voidType) {
     push(result_type, round_fp(result));
@@ -2551,6 +2240,39 @@ void GraphBuilder::invoke(Bytecodes::Code code) {
   if (profile_return() && result_type->is_object_kind()) {
     profile_return_type(result, target);
   }
+  return false;
+}
+
+bool GraphBuilder::invoke(Bytecodes::Code code) {
+  bool will_link;
+  ciSignature* declared_signature = nullptr;
+  ciMethod*             target = stream()->get_method(will_link, &declared_signature);
+  ciKlass*              holder = stream()->get_declared_method_holder();
+  const Bytecodes::Code bc_raw = stream()->cur_bc_raw();
+
+  return invoke(target, holder, declared_signature, will_link, code, bc_raw, bci());
+}
+
+bool GraphBuilder::invoke_monitor(Value x, int bci, Bytecodes::Code code, int count) {
+  bool will_link;
+
+  ciSignature* declared_signature = nullptr;
+  ciMethod*    target;
+  ciKlass*     holder;
+  const Bytecodes::Code bc_raw = Bytecodes::_invokestatic;
+  
+  ciEnv* env = CURRENT_ENV;
+  target = env->get_monitor_method(will_link, &declared_signature, code == Bytecodes::_monitorenter);
+  holder = env->get_monitor_holder(code == Bytecodes::_monitorenter);
+
+  assert(declared_signature->count() == 2, "");
+  apush(x);
+  ipush(append_with_bci(new Constant(new IntConstant(count)), bci));
+  bool inlined = invoke(target, holder, declared_signature, will_link, bc_raw, bc_raw, bci);
+  if (!inlined) {
+    BAILOUT_("monitor not inlined", false);
+  }
+  return inlined;
 }
 
 
@@ -2634,8 +2356,13 @@ void GraphBuilder::instance_of(int klass_index) {
   }
 }
 
-/*
 void GraphBuilder::monitorenter(Value x, int bci) {
+  if (ObjectMonitorMode::java()) {
+    jint locks = state()->locks_size();
+    bool inlined = invoke_monitor(x, bci, Bytecodes::_monitorenter, locks);
+    CHECK_BAILOUT();
+    return;
+  }
   // save state before locking in case of deoptimization after a NullPointerException
   ValueStack* state_before = copy_state_for_exception_with_bci(bci);
   compilation()->set_has_monitors(true);
@@ -2643,12 +2370,33 @@ void GraphBuilder::monitorenter(Value x, int bci) {
   kill_all();
 }
 
+void GraphBuilder::monitorenter_complete(ciMethod* callee) {
+  Values* args = state()->pop_arguments(callee->arg_size());
+  Value obj = args->at(0);
+  // XXX FIXME assumes we process the inlined block before the successor block
+  // in the caller.
+  state()->caller_state()->lock(obj);
+}
+
 
 void GraphBuilder::monitorexit(Value x, int bci) {
+  if (ObjectMonitorMode::java()) {
+    int locks = state()->locks_size() - 1;
+    bool inlined = invoke_monitor(x, bci, Bytecodes::_monitorexit, locks);
+    CHECK_BAILOUT();
+    return;
+  }
   append_with_bci(new MonitorExit(x, state()->unlock()), bci);
   kill_all();
 }
-*/
+
+void GraphBuilder::monitorexit_complete(ciMethod* callee) {
+  Values* args = state()->pop_arguments(callee->arg_size());
+  Value obj = args->at(0);
+  // XXX FIXME assumes we process the inlined block before the successor block
+  // in the caller.
+  state()->caller_state()->unlock();
+}
 
 void GraphBuilder::new_multi_array(int dimensions) {
   ciKlass* klass = stream()->get_klass();
@@ -2824,7 +2572,10 @@ XHandlers* GraphBuilder::handle_exception(Instruction* instruction) {
         compilation()->set_has_exception_handlers(true);
 
         BlockBegin* entry = h->entry_block();
-        if (entry == block()) {
+#if 1
+// TODO: Why does this not happen with Robbin's changes? 
+#endif
+        if (entry == block() && !ObjectMonitorMode::java()) {
           // It's acceptable for an exception handler to cover itself
           // but we don't handle that in the parser currently.  It's
           // very rare so we bailout instead of trying to handle it.
@@ -2874,7 +2625,9 @@ XHandlers* GraphBuilder::handle_exception(Instruction* instruction) {
         exception_handlers->append(new_xhandler);
 
         // fill in exception handler subgraph lazily
+#if 0
         assert(!entry->is_set(BlockBegin::was_visited_flag), "entry must not be visited yet");
+#endif
         cur_scope_data->add_to_work_list(entry);
 
         // stop when reaching catchall
@@ -3292,8 +3045,8 @@ BlockEnd* GraphBuilder::iterate_bytecodes_for_block(int bci) {
       case Bytecodes::_athrow         : throw_op(s.cur_bci()); break;
       case Bytecodes::_checkcast      : check_cast(s.get_index_u2()); break;
       case Bytecodes::_instanceof     : instance_of(s.get_index_u2()); break;
-      case Bytecodes::_monitorenter   : invoke_monitor(apop(), s.cur_bci(), code); break;
-      case Bytecodes::_monitorexit    : invoke_monitor(apop(), s.cur_bci(), code); break;
+      case Bytecodes::_monitorenter   : monitorenter(apop(), s.cur_bci()); break;
+      case Bytecodes::_monitorexit    : monitorexit (apop(), s.cur_bci()); break;
       case Bytecodes::_wide           : ShouldNotReachHere(); break;
       case Bytecodes::_multianewarray : new_multi_array(s.cur_bcp()[3]); break;
       case Bytecodes::_ifnull         : if_null(objectType, If::eql); break;
@@ -3322,6 +3075,9 @@ BlockEnd* GraphBuilder::iterate_bytecodes_for_block(int bci) {
   BlockEnd* end = last()->as_BlockEnd();
   if (end == nullptr) {
     // all blocks must end with a BlockEnd instruction => add a Goto
+#if 1
+      os::breakpoint();
+#endif
     end = new Goto(block_at(s.cur_bci()), false);
     append(end);
   }
@@ -3444,22 +3200,52 @@ BlockBegin* GraphBuilder::header_block(BlockBegin* entry, BlockBegin::Flag f, Va
   BlockBegin* h = new BlockBegin(entry->bci());
   h->set_depth_first_number(0);
 
-  Value l = h;
-  BlockEnd* g = new Goto(entry, false);
-  l->set_next(g, entry->bci());
-  h->set_end(g);
   h->set(f);
   // setup header block end state
   ValueStack* s = state->copy(ValueStack::StateAfter, entry->bci()); // can use copy since stack is empty (=> no phis)
   assert(s->stack_is_empty(), "must have empty stack at entry point");
-  g->set_state(s);
+#if 1
+  assert(entry->bci() == 0, "");
+  assert(block_at(entry->bci()) == entry, "");
+#endif
+
+  // set up
+  int bci = SynchronizationEntryBCI;
+  _block = h;
+  _last = h;
+  _state = s;
+  ciBytecodeStream str(method());
+  str.force_bci(bci, Bytecodes::_monitorenter);
+  scope_data()->set_stream(&str);
+
+  if (method()->is_synchronized()) {
+    if (GenerateSynchronizationCode) {
+      Value lock = method()->is_static() ?
+        append(new Constant(new InstanceConstant(method()->holder()->java_mirror()))) :
+        _state->local_at(0);
+
+      monitorenter(lock, bci);
+
+    }
+  }
+
+assert(_block == h, "inlining?");
+  _goto(bci, entry->bci());
+
+  BlockEnd* end = last()->as_BlockEnd();
+  assert(end != nullptr, "");
+  _block->set_end(end);
+
+  // tear down
+  scope_data()->set_stream(nullptr);
+
   return h;
 }
 
 
-
-BlockBegin* GraphBuilder::setup_start_block(int osr_bci, BlockBegin* std_entry, BlockBegin* osr_entry, ValueStack* state) {
-  BlockBegin* start = new BlockBegin(0);
+BlockBegin* GraphBuilder::setup_start_block(BlockBegin* std_entry, BlockBegin* osr_entry) {
+  ValueStack* state = state_at_entry();
+  BlockBegin* start = new BlockBegin(BeforeBci);
 
   // This code eliminates the empty start block at the beginning of
   // each method.  Previously, each method started with the
@@ -3472,7 +3258,9 @@ BlockBegin* GraphBuilder::setup_start_block(int osr_bci, BlockBegin* std_entry, 
   // In addition, with range check elimination, we may need a valid block
   // that dominates all the rest to insert range predicates.
   BlockBegin* new_header_block;
-  if (std_entry->number_of_preds() > 0 || is_profiling() || RangeCheckElimination) {
+  if (std_entry->number_of_preds() > 0 || is_profiling() || RangeCheckElimination ||
+      method()->is_synchronized())
+  {
     new_header_block = header_block(std_entry, BlockBegin::std_entry_flag, state);
   } else {
     new_header_block = std_entry;
@@ -3487,15 +3275,26 @@ BlockBegin* GraphBuilder::setup_start_block(int osr_bci, BlockBegin* std_entry, 
   start->set_next(base, 0);
   start->set_end(base);
   // create & setup state for start block
-  start->set_state(state->copy(ValueStack::StateAfter, std_entry->bci()));
-  base->set_state(state->copy(ValueStack::StateAfter, std_entry->bci()));
-
+  start->set_state(state->copy(ValueStack::StateBefore, BeforeBci));
+  base->set_state(state->copy(ValueStack::StateBefore, BeforeBci));
   if (base->std_entry()->state() == nullptr) {
+#if 1
+// XXX Wrong, missing sync lock state?
+#endif
     // setup states for header blocks
     base->std_entry()->merge(state, compilation()->has_irreducible_loops());
   }
 
+  // setup state for std entry
+  if (new_header_block != std_entry) {
+    assert(_state->is_same(new_header_block->end()->state()), "");
+    std_entry->merge(_state, compilation()->has_irreducible_loops());
+  }
+
   assert(base->std_entry()->state() != nullptr, "");
+  assert(new_header_block->state() != nullptr, "");
+  assert(std_entry->state() != nullptr, "");
+
   return start;
 }
 
@@ -3578,6 +3377,9 @@ void GraphBuilder::setup_osr_entry_block() {
   target->merge(_osr_entry->end()->state(), compilation()->has_irreducible_loops());
 
   scope_data()->set_stream(nullptr);
+#if 1
+  // XXX TODO: set osr_entry in Base node
+#endif
 }
 
 
@@ -3604,11 +3406,6 @@ ValueStack* GraphBuilder::state_at_entry() {
     idx += type->size();
   }
 
-  // lock synchronized method
-  if (method()->is_synchronized()) {
-    state->lock(nullptr);
-  }
-
   return state;
 }
 
@@ -3630,16 +3427,20 @@ GraphBuilder::GraphBuilder(Compilation* compilation, IRScope* scope)
   BlockList* bci2block = blm.bci2block();
   BlockBegin* start_block = bci2block->at(0);
 
-  push_root_scope(scope, bci2block, start_block);
+  push_root_scope(scope, bci2block);
 
-  // setup state for std entry
-  _initial_state = state_at_entry();
-  start_block->merge(_initial_state, compilation->has_irreducible_loops());
+  _start = setup_start_block(start_block, _osr_entry);
+  _initial_state = start_block->state();
+
+  assert(_start->state() != nullptr, "");
+  assert(start_block->state() != nullptr, "");
+  assert(_start->state()->is_same(_initial_state), "");
 
   // End nulls still exist here
 
   // complete graph
   _vmap        = new ValueMap();
+
   switch (scope->method()->intrinsic_id()) {
   case vmIntrinsics::_dabs          : // fall through
   case vmIntrinsics::_dsqrt         : // fall through
@@ -3762,8 +3563,9 @@ GraphBuilder::GraphBuilder(Compilation* compilation, IRScope* scope)
   }
 #endif // ASSERT
 
-  _start = setup_start_block(osr_bci, start_block, _osr_entry, _initial_state);
-
+#if 1
+//XXX
+#endif
   eliminate_redundant_phis(_start);
 
   NOT_PRODUCT(if (PrintValueNumbering && Verbose) print_stats());
@@ -3968,6 +3770,8 @@ void GraphBuilder::build_graph_for_intrinsic(ciMethod* callee, bool ignore_retur
   case vmIntrinsics::_getAndSetReference     : append_unsafe_get_and_set(callee, false); return;
   case vmIntrinsics::_getCharStringU         : append_char_access(callee, false); return;
   case vmIntrinsics::_putCharStringU         : append_char_access(callee, true); return;
+  case vmIntrinsics::_monitorEnterComplete   : monitorenter_complete(callee); return;
+  case vmIntrinsics::_monitorExitComplete    : monitorexit_complete(callee); return;
   default:
     break;
   }
@@ -4109,7 +3913,12 @@ bool GraphBuilder::try_inline_jsr(int jsr_dest_bci) {
 void GraphBuilder::inline_sync_entry(Value lock, BlockBegin* sync_handler) {
   assert(lock != nullptr && sync_handler != nullptr, "lock or handler missing");
 
-  invoke_monitor(lock, SynchronizationEntryBCI, Bytecodes::_monitorenter);
+  monitorenter(lock, SynchronizationEntryBCI);
+#ifdef ASSERT
+  if (!ObjectMonitorMode::java()) {
+    assert(_last->as_MonitorEnter() != nullptr, "monitor enter expected");
+  }
+#endif
   _last->set_needs_null_check(false);
 
   sync_handler->set(BlockBegin::exception_entry_flag);
@@ -4156,13 +3965,16 @@ void GraphBuilder::fill_sync_handler(Value lock, BlockBegin* sync_handler, bool 
   }
 
   if (lock) {
+#if 1
+assert(lock->block() == block(), "??");
+#endif
     assert(state()->locks_size() > 0 && state()->lock_at(state()->locks_size() - 1) == lock, "lock is missing");
     if (!lock->is_linked()) {
       lock = append_with_bci(lock, bci);
     }
 
     // exit the monitor in the context of the synchronized method
-    invoke_monitor(lock, bci, Bytecodes::_monitorexit);
+    monitorexit(lock, bci);
 
     // exit the context of the synchronized method
     if (!default_handler) {
@@ -4186,7 +3998,6 @@ void GraphBuilder::fill_sync_handler(Value lock, BlockBegin* sync_handler, bool 
 
 
 bool GraphBuilder::try_inline_full(ciMethod* callee, bool holder_known, bool ignore_return, Bytecodes::Code bc, Value receiver) {
-  if (callee->is_synchronized()) return false;
 
   assert(!callee->is_native(), "callee must not be native");
   if (CompilationPolicy::should_not_inline(compilation()->env(), callee)) {
@@ -4407,9 +4218,8 @@ bool GraphBuilder::try_inline_full(ciMethod* callee, bool holder_known, bool ign
   if (log != nullptr) log->done("parse");
 
   // If we bailed out during parsing, return immediately (this is bad news)
-  if (bailed_out()) {   
-    return false;
-  }
+  if (bailed_out())
+      return false;
 
   // iterate_all_blocks theoretically traverses in random order; in
   // practice, we have only traversed the continuation if we are
@@ -4455,13 +4265,17 @@ bool GraphBuilder::try_inline_full(ciMethod* callee, bool holder_known, bool ign
 
   // Fill the exception handler for synchronized methods with instructions
   if (callee->is_synchronized() && sync_handler->state() != nullptr) {
+#if 1
     scope_data()->set_stream(scope_data()->parent()->stream());
+#endif
     fill_sync_handler(lock, sync_handler);
-    scope_data()->set_stream(NULL);
+#if 1
+    scope_data()->set_stream(nullptr);
+#endif
   } else {
     pop_scope();
   }
-  
+
   compilation()->notice_inlined_method(callee);
 
   return true;
@@ -4595,12 +4409,11 @@ void GraphBuilder::clear_inline_bailout() {
 }
 
 
-void GraphBuilder::push_root_scope(IRScope* scope, BlockList* bci2block, BlockBegin* start) {
+void GraphBuilder::push_root_scope(IRScope* scope, BlockList* bci2block) {
   ScopeData* data = new ScopeData(nullptr);
   data->set_scope(scope);
   data->set_bci2block(bci2block);
   _scope_data = data;
-  _block = start;
 }
 
 

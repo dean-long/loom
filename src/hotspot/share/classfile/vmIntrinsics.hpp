@@ -107,20 +107,24 @@ class methodHandle;
 // add the declaration of the intrinsic to the appropriate section of the list.
 #define VM_INTRINSICS_DO(do_intrinsic, do_class, do_name, do_signature, do_alias)                                       \
   /* (1) Library intrinsics                                                                        */                   \
-  do_intrinsic(_hashCode,                 java_lang_Object,       hashCode_name, void_int_signature,             F_RN)  \
-   do_name(     hashCode_name,                                   "hashCode")                                            \
-  do_intrinsic(_getClass,                 java_lang_Object,       getClass_name, void_class_signature,           F_RN)  \
-   do_name(     getClass_name,                                   "getClass")                                            \
-  do_intrinsic(_clone,                    java_lang_Object,       clone_name, void_object_signature,             F_RN)  \
-   do_name(     clone_name,                                      "clone")                                               \
-  do_intrinsic(_notify,                   java_lang_Object,       notify0_name, void_method_signature,           F_RN)   \
-   do_name(     notify0_name,                                    "notify0")                                             \
-  do_intrinsic(_notifyAll,                java_lang_Object,       notifyAll0_name, void_method_signature,        F_RN)   \
-   do_name(     notifyAll0_name,                                 "notifyAll0")                                          \
-  do_intrinsic(_monitorEnterLegacy,       java_lang_Object,      monitorEnter0_name, object_void_signature,      F_SN)  \
-   do_name(     monitorEnter0_name,                              "monitorEnter0")                                       \
-  do_intrinsic(_monitorExitLegacy,         java_lang_Object,      monitorExit0_name, object_void_signature,       F_SN)  \
-   do_name(     monitorExit0_name,                               "monitorExit0")                                        \
+  do_intrinsic(_hashCode,                 java_lang_Object,     hashCode_name, void_int_signature,                F_RN) \
+   do_name(     hashCode_name,                                 "hashCode")                                              \
+  do_intrinsic(_getClass,                 java_lang_Object,     getClass_name, void_class_signature,              F_RN) \
+   do_name(     getClass_name,                                 "getClass")                                              \
+  do_intrinsic(_clone,                    java_lang_Object,     clone_name, void_object_signature,                F_RN) \
+   do_name(     clone_name,                                    "clone")                                                 \
+  do_intrinsic(_notify,                   java_lang_Object,     notify0_name, void_method_signature,              F_RN) \
+   do_name(     notify0_name,                                  "notify0")                                               \
+  do_intrinsic(_notifyAll,                java_lang_Object,     notifyAll0_name, void_method_signature,           F_RN) \
+   do_name(     notifyAll0_name,                               "notifyAll0")                                            \
+  do_intrinsic(_monitorEnterLegacy,       java_lang_Object,     monitorEnter0_name, object_void_signature,        F_SN) \
+   do_name(     monitorEnter0_name,                            "monitorEnter0")                                         \
+  do_intrinsic(_monitorExitLegacy,        java_lang_Object,     monitorExit0_name, object_void_signature,         F_SN) \
+   do_name(     monitorExit0_name,                             "monitorExit0")                                          \
+  do_intrinsic(_monitorEnterComplete,     java_lang_Object,     monitorEnterComplete_name, object_void_signature, F_SN) \
+   do_name(     monitorEnterComplete_name,                     "compiledMonitorEnterComplete")                          \
+  do_intrinsic(_monitorExitComplete,      java_lang_Object,     monitorExitComplete_name, object_void_signature,  F_SN) \
+   do_name(     monitorExitComplete_name,                      "compiledMonitorExitComplete")                           \
   /* Math & StrictMath intrinsics are defined in terms of just a few signatures: */                                     \
   do_class(java_lang_Math,                "java/lang/Math")                                                             \
   do_class(java_lang_StrictMath,          "java/lang/StrictMath")                                                       \

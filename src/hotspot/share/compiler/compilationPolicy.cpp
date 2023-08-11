@@ -138,6 +138,9 @@ bool CompilationPolicy::can_be_compiled(const methodHandle& m, int comp_level) {
     return false;
   }
   comp_level = adjust_level_for_compilability_query((CompLevel) comp_level);
+  if (is_c2_compile(comp_level) && ObjectMonitorMode::java()) {
+    return false;
+  }
   if (comp_level == CompLevel_any || is_compile(comp_level)) {
     return !m->is_not_compilable(comp_level);
   }

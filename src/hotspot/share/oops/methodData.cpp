@@ -678,6 +678,13 @@ int MethodData::bytecode_cell_count(Bytecodes::Code code) {
     } else {
       return BitData::static_cell_count();
     }
+  case Bytecodes::_monitorenter:
+  case Bytecodes::_monitorexit:
+    if (!ObjectMonitorMode::java() || UseNewCode2) {
+      return no_profile_data;
+    } else {
+      // fall through to invoke
+    }
   case Bytecodes::_invokespecial:
   case Bytecodes::_invokestatic:
     if (MethodData::profile_arguments() || MethodData::profile_return()) {
@@ -743,6 +750,10 @@ int MethodData::compute_data_size(BytecodeStream* stream) {
     case Bytecodes::_tableswitch:
       cell_count = MultiBranchData::compute_cell_count(stream);
       break;
+    case Bytecodes::_monitorenter:
+    case Bytecodes::_monitorexit:
+      assert(ObjectMonitorMode::java(), "");
+      assert(!UseNewCode2, "compute_data_size");
     case Bytecodes::_invokespecial:
     case Bytecodes::_invokestatic:
     case Bytecodes::_invokedynamic:
@@ -1002,6 +1013,13 @@ int MethodData::initialize_data(BytecodeStream* stream,
       tag = DataLayout::bit_data_tag;
     }
     break;
+  case Bytecodes::_monitorenter:
+  case Bytecodes::_monitorexit:
+    if (!ObjectMonitorMode::java() || UseNewCode2) {
+      break;
+    } else {
+      // fall through to invoke
+    }
   case Bytecodes::_invokespecial:
   case Bytecodes::_invokestatic: {
     int counter_data_cell_count = CounterData::static_cell_count();

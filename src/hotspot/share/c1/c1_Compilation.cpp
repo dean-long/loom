@@ -388,6 +388,23 @@ int Compilation::compile_java_method() {
     set_has_monitors(true);
   }
 
+#if 1
+  if (ObjectMonitorMode::java()) {
+    if (method()->is_synchronized()) {
+      if (!UseNewCode) {
+        // FIXME
+        BAILOUT_("JOM c1 synchronized methods", no_frame_size);
+      }
+    }
+    if (method()->has_monitor_bytecodes()) {
+      if (!UseNewCode) {
+        // FIXME
+        BAILOUT_("JOM c1 uses monitors ", no_frame_size);
+      }
+    }
+  }
+#endif
+
   {
     PhaseTraceTime timeit(_t_buildIR);
     build_hir();

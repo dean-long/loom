@@ -28,6 +28,7 @@
 #include "interpreter/bytecodes.hpp"
 #include "memory/allocation.hpp"
 #include "oops/method.hpp"
+#include "runtime/synchronizer.hpp"
 #include "utilities/align.hpp"
 #include "utilities/bytes.hpp"
 
@@ -203,12 +204,18 @@ class Bytecode_member_ref: public Bytecode {
 // Abstraction for invoke_{virtual, static, interface, special, dynamic, handle}
 
 class Bytecode_invoke: public Bytecode_member_ref {
+ private:
+  bool _allow_special;
  protected:
   // Constructor that skips verification
-  Bytecode_invoke(const methodHandle& method, int bci, bool unused)  : Bytecode_member_ref(method, bci) {}
+  Bytecode_invoke(const methodHandle& method, int bci, bool unused) : Bytecode_member_ref(method, bci) {
+    _allow_special = ObjectMonitorMode::java();
+  }
 
  public:
-  Bytecode_invoke(const methodHandle& method, int bci)  : Bytecode_member_ref(method, bci) { verify(); }
+  Bytecode_invoke(const methodHandle& method, int bci) : Bytecode_invoke(method, bci, false) {
+    verify();
+  }
   void verify() const;
 
   // Attributes
@@ -217,14 +224,13 @@ class Bytecode_invoke: public Bytecode_member_ref {
   // Testers
   bool is_invokeinterface() const                { return invoke_code() == Bytecodes::_invokeinterface; }
   bool is_invokevirtual() const                  { return invoke_code() == Bytecodes::_invokevirtual; }
-  bool is_invokestatic() const                   { return invoke_code() == Bytecodes::_invokestatic; }
+  bool is_invokestatic() const                   { return invoke_code() == Bytecodes::_invokestatic || is_special(); }
   bool is_invokespecial() const                  { return invoke_code() == Bytecodes::_invokespecial; }
   bool is_invokedynamic() const                  { return invoke_code() == Bytecodes::_invokedynamic; }
   bool is_invokehandle() const                   { return invoke_code() == Bytecodes::_invokehandle; }
-#ifdef C2_PATCH
   bool is_monitorenter() const                   { return invoke_code() == Bytecodes::_monitorenter; }
   bool is_monitorexit() const                    { return invoke_code() == Bytecodes::_monitorexit; }
-#endif
+  bool is_special() const                        { return (is_monitorenter()   || is_monitorexit()) && _allow_special; }
 
   bool has_receiver() const                      { return !is_invokestatic() && !is_invokedynamic(); }
 
@@ -233,17 +239,16 @@ class Bytecode_invoke: public Bytecode_member_ref {
                                                           is_invokestatic()    ||
                                                           is_invokespecial()   ||
                                                           is_invokedynamic()   ||
-#ifndef C2_PATCH
-                                                          is_invokehandle(); }
-#else
                                                           is_invokehandle()    ||
-                                                          is_monitorenter()    ||
-                                                          is_monitorexit(); }
-#endif
+                                                          is_special();
+                                                          }
 
   bool has_appendix();
 
   int size_of_parameters() const;
+
+  int index() const;
+  int pool_index() const;
 
  private:
   // Helper to skip verification.   Used is_valid() to check if the result is really an invoke

@@ -100,7 +100,6 @@ class TemplateInterpreterGenerator: public AbstractInterpreterGenerator {
   address generate_CRC32C_updateBytes_entry(AbstractInterpreter::MethodKind kind);
   address generate_currentThread();
 #ifdef AMD64
-  address generate_caller_frame_id();
   address generate_get_lock_state();
   address generate_cas_lock_state();
 #endif

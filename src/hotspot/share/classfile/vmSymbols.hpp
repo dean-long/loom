@@ -611,6 +611,7 @@
   template(vthread_signature,                         "Ljava/lang/VirtualThread;")                \
   template(object_void_signature,                     "(Ljava/lang/Object;)V")                    \
   template(object_int_signature,                      "(Ljava/lang/Object;)I")                    \
+  template(object_int_void_signature,                 "(Ljava/lang/Object;I)V")                   \
   template(long_object_long_signature,                "(JLjava/lang/Object;)J")                   \
   template(object_long_int_signature,                 "(Ljava/lang/Object;J)I")                   \
   template(object_long_void_signature,                "(Ljava/lang/Object;J)V")                   \

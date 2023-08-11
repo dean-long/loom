@@ -501,20 +501,6 @@ address TemplateInterpreterGenerator::generate_Float_floatToRawIntBits_entry() {
 address TemplateInterpreterGenerator::generate_Double_longBitsToDouble_entry() { return nullptr; }
 address TemplateInterpreterGenerator::generate_Double_doubleToRawLongBits_entry() { return nullptr; }
 
-address TemplateInterpreterGenerator::generate_caller_frame_id() {
-
-  address entry_point = __ pc();
-
-  __ movptr(rax, Address(rbp, frame::link_offset * wordSize));
-
-  __ pop(rcx);
-  __ mov(rsp, r13);
-  __ jmp(rcx);
-
-  return entry_point;
-}
-
-
 address TemplateInterpreterGenerator::generate_get_lock_state() {
 
   address entry_point = __ pc();

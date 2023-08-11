@@ -2482,6 +2482,7 @@ public class Thread implements Runnable {
         if (this != Thread.currentThread()) MonitorSupport.abort("invariant");
         // If we have a bug we can't trigger throwing AIOOBE as that uses
         // synchronized code and we get infinite recursion.
+if (lockStackPos - 1 < 0 || lockStackPos - 1 >= lockStack.length) MonitorSupport.abort("peek with lockStackPos "+ lockStackPos);
         if (lockStackPos == 0) MonitorSupport.abort("nothing to pop!");
         return lockStack[lockStackPos - 1];
     }
@@ -2494,6 +2495,9 @@ public class Thread implements Runnable {
             if (i == lockee)
                 count++;
         }
+if (count > 0 && lockStackPos == 0) {
+    MonitorSupport.abort("lockCount: Bad lockStackPos " + lockStackPos + " with count " + count);
+}
         return count;
     }
 

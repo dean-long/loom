@@ -782,10 +782,12 @@ bool BlockBegin::try_merge(ValueStack* new_state, bool has_irreducible_loops) {
     if (is_set(BlockBegin::was_visited_flag)) {
       TRACE_PHI(tty->print_cr("loop header block, phis must be present"));
 
+#if 0
       if (!is_set(BlockBegin::parser_loop_header_flag)) {
         // this actually happens for complicated jsr/ret structures
         return false; // BAILOUT in caller
       }
+#endif
 
       for_each_local_value(existing_state, index, existing_value) {
         Value new_value = new_state->local_at(index);

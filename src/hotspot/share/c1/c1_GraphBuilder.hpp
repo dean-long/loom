@@ -184,7 +184,7 @@ class GraphBuilder {
   int               _instruction_count;          // for bailing out in pathological jsr/ret cases
   BlockBegin*       _start;                      // the start block
   BlockBegin*       _osr_entry;                  // the osr entry block block
-  ValueStack*       _initial_state;              // The state for the start block
+  ValueStack*       _initial_state;              // The state for the std_entry block
 
   // for each call to connect_to_end; can also be set by inliner
   BlockBegin*       _block;                      // the current block
@@ -256,15 +256,19 @@ class GraphBuilder {
   void method_return(Value x, bool ignore_return = false);
   void call_register_finalizer();
   void access_field(Bytecodes::Code code);
-  void invoke(Bytecodes::Code code);
+  bool invoke(ciMethod* target, ciKlass* holder, ciSignature* declared_signature,
+              bool will_link, Bytecodes::Code code, Bytecodes::Code bc_raw, int bci);
+  bool invoke(Bytecodes::Code code);
   void new_instance(int klass_index);
   void new_type_array();
   void new_object_array();
   void check_cast(int klass_index);
   void instance_of(int klass_index);
-  void invoke_monitor(Value x, int bci, Bytecodes::Code code);
-//  void monitorenter(Value x, int bci);
-//  void monitorexit(Value x, int bci);
+  bool invoke_monitor(Value x, int bci, Bytecodes::Code code, int count);
+  void monitorenter(Value x, int bci);
+  void monitorexit(Value x, int bci);
+  void monitorenter_complete(ciMethod* callee);
+  void monitorexit_complete(ciMethod* callee);
   void new_multi_array(int dimensions);
   void throw_op(int bci);
   Value round_fp(Value fp_value);
@@ -365,11 +369,11 @@ class GraphBuilder {
   // helpers
   void inline_bailout(const char* msg);
   BlockBegin* header_block(BlockBegin* entry, BlockBegin::Flag f, ValueStack* state);
-  BlockBegin* setup_start_block(int osr_bci, BlockBegin* std_entry, BlockBegin* osr_entry, ValueStack* init_state);
+  BlockBegin* setup_start_block(BlockBegin* std_entry, BlockBegin* osr_entry);
   void setup_osr_entry_block();
   void clear_inline_bailout();
   ValueStack* state_at_entry();
-  void push_root_scope(IRScope* scope, BlockList* bci2block, BlockBegin* start);
+  void push_root_scope(IRScope* scope, BlockList* bci2block);
   void push_scope(ciMethod* callee, BlockBegin* continuation);
   void push_scope_for_jsr(BlockBegin* jsr_continuation, int jsr_dest_bci);
   void pop_scope();

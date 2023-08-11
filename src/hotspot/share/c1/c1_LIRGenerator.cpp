@@ -426,7 +426,9 @@ CodeEmitInfo* LIRGenerator::state_for(Instruction* x, ValueStack* state, bool ig
         // all locals are dead on exit from the synthetic unlocker
         liveness.clear();
       } else {
-        assert(x->as_MonitorEnter() || x->as_ProfileInvoke(), "only other cases are MonitorEnter and ProfileInvoke");
+        assert(x->as_MonitorEnter() || x->as_ProfileInvoke() ||
+              (ObjectMonitorMode::java() && x->as_Invoke()),
+              "only other cases are MonitorEnter and ProfileInvoke");
       }
     }
     if (!liveness.is_valid()) {
@@ -608,6 +610,9 @@ void LIRGenerator::logic_op (Bytecodes::Code code, LIR_Opr result_op, LIR_Opr le
 
 void LIRGenerator::monitor_enter(LIR_Opr object, LIR_Opr lock, LIR_Opr hdr, LIR_Opr scratch, int monitor_no, CodeEmitInfo* info_for_exception, CodeEmitInfo* info) {
   if (!GenerateSynchronizationCode) return;
+#if 1
+  assert(!ObjectMonitorMode::java(), "");
+#endif
   // for slow path, use debug info for state after successful locking
   CodeStub* slow_path = new MonitorEnterStub(object, lock, info);
   __ load_stack_address_monitor(monitor_no, lock);
@@ -618,6 +623,9 @@ void LIRGenerator::monitor_enter(LIR_Opr object, LIR_Opr lock, LIR_Opr hdr, LIR_
 
 void LIRGenerator::monitor_exit(LIR_Opr object, LIR_Opr lock, LIR_Opr new_hdr, LIR_Opr scratch, int monitor_no) {
   if (!GenerateSynchronizationCode) return;
+#if 1
+  assert(!ObjectMonitorMode::java(), "");
+#endif
   // setup registers
   LIR_Opr hdr = lock;
   lock = new_hdr;
@@ -2661,32 +2669,12 @@ void LIRGenerator::do_Base(Base* x) {
     call_runtime(&signature, args, CAST_FROM_FN_PTR(address, SharedRuntime::dtrace_method_entry), voidType, nullptr);
   }
 
-  if (method()->is_synchronized()) {
-    LIR_Opr obj;
-    if (method()->is_static()) {
-      obj = new_register(T_OBJECT);
-      __ oop2reg(method()->holder()->java_mirror()->constant_encoding(), obj);
-    } else {
-      Local* receiver = x->state()->local_at(0)->as_Local();
-      assert(receiver != nullptr, "must already exist");
-      obj = receiver->operand();
-    }
-    assert(obj->is_valid(), "must be valid");
-
-    if (method()->is_synchronized() && GenerateSynchronizationCode) {
-      LIR_Opr lock = syncLockOpr();
-      __ load_stack_address_monitor(0, lock);
-
-      CodeEmitInfo* info = new CodeEmitInfo(scope()->start()->state()->copy(ValueStack::StateBefore, SynchronizationEntryBCI), nullptr, x->check_flag(Instruction::DeoptimizeOnException));
-      CodeStub* slow_path = new MonitorEnterStub(obj, lock, info);
-
-      // receiver is guaranteed non-null so don't need CodeEmitInfo
-      __ lock_object(syncTempOpr(), obj, lock, new_register(T_OBJECT), slow_path, nullptr);
-    }
-  }
   // increment invocation counters if needed
   if (!method()->is_accessor()) { // Accessors do not have MDOs, so no counting.
     profile_parameters(x);
+#if 1
+    assert(x->state()->is_same(scope()->start()->state()), "");
+#endif
     CodeEmitInfo* info = new CodeEmitInfo(scope()->start()->state()->copy(ValueStack::StateBefore, SynchronizationEntryBCI), nullptr, false);
     increment_invocation_counter(info);
   }

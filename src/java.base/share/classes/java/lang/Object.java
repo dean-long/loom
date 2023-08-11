@@ -26,6 +26,7 @@
 package java.lang;
 
 import jdk.internal.misc.Blocker;
+import jdk.internal.vm.annotation.ForceInline;
 import jdk.internal.vm.annotation.IntrinsicCandidate;
 import jdk.internal.vm.annotation.ReservedStackAccess;
 
@@ -623,18 +624,6 @@ public class Object {
         }
     }
 
-    /* C2_PATCH
-    @ReservedStackAccess
-    private static final void compilerMonitorExit(Object o) {
-        monitorExit(o, 0x8L);
-    }
-
-    @ReservedStackAccess
-    private static final void compilerMonitorEnter(Object o) {
-        monitorEnter(o, 0x8L);
-    }
-    */
-
     /** Entry point for monitor exit from the VM (bytecode and ObjectLocker) */
     @ReservedStackAccess
     private static final void monitorExit(Object o) {
@@ -668,6 +657,49 @@ public class Object {
             MonitorSupport.abortException("monitorExitAll", t);
         }
     }
+
+    /** Update lock state in the caller
+     */
+    @IntrinsicCandidate
+    private static final native void compiledMonitorEnterComplete(Object o);
+
+    /** Update lock state in the caller
+     */
+    @IntrinsicCandidate
+    private static final native void compiledMonitorExitComplete(Object o);
+
+    /** Entry point for monitor entry from compiled code
+     */
+    @ForceInline
+    @ReservedStackAccess
+    private static final void compiledMonitorEnter(Object o, int depth) {
+        MonitorSupport.log("compiledMonitorEnter depth " + depth);
+        monitorEnter(o);
+        compiledMonitorEnterComplete(o); // update caller lock state
+    }
+
+    /** Entry point for monitor exit from compiled code
+     */
+    @ForceInline
+    @ReservedStackAccess
+    private static final void compiledMonitorExit(Object o, int depth) {
+        MonitorSupport.log("compiledMonitorExit " + depth);
+        monitorExit(o);
+        compiledMonitorExitComplete(o); // update caller lock state
+    }
+
+    @ReservedStackAccess
+    private static final void resolve_monitorenter_replacement(Object o) {
+        // TODO: pointer linkresolver here?
+        monitorEnter(o);
+    }
+
+    @ReservedStackAccess
+    private static final void resolve_monitorexit_replacement(Object o) {
+        // TODO: pointer linkresolver here?
+        monitorExit(o);
+    }
+
 
     /** Entry point for uninterruptible monitor wait from the VM
      *  (used only for class initialization when using Java monitors)
