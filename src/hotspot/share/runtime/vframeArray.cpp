@@ -24,6 +24,7 @@
 
 #include "precompiled.hpp"
 #include "classfile/vmSymbols.hpp"
+#include "code/scopeDesc.hpp"
 #include "code/vmreg.inline.hpp"
 #include "interpreter/bytecode.hpp"
 #include "interpreter/interpreter.hpp"
@@ -46,7 +47,12 @@
 #include "opto/runtime.hpp"
 #endif
 
-int vframeArrayElement:: bci(void) const { return (_bci == SynchronizationEntryBCI ? 0 : _bci); }
+int vframeArrayElement::bci(void) const {
+#if 1
+assert(_bci >= 0, "");
+#endif
+return (_bci == SynchronizationEntryBCI ? 0 : _bci);
+}
 
 void vframeArrayElement::free_monitors(JavaThread* jt) {
   if (_monitors != nullptr) {
@@ -63,7 +69,27 @@ void vframeArrayElement::fill_in(compiledVFrame* vf, bool realloc_failures) {
 // interpreter frame we will be creating to replace vf
 
   _method = vf->method();
-  _bci    = vf->raw_bci();
+  int bci = vf->raw_bci();
+#if 0
+  int bci0 = bci;
+#endif
+  if (bci < 0) {
+#if 0
+    if (vf->scope()->in_monitor_exit()) {
+      if (vf->scope()->in_monitor_exit_with_exception()) {
+        bci = !vf->is_top() ? UnknownBci         // still locked
+                            : AfterExceptionBci; // already unlocked
+      } else {
+        bci = EpilogueUnlockBci;
+      }
+    } else if (vf->scope()->in_monitor_enter()) {
+      bci = PrologueLockBci;
+    }
+    assert(bci == bci0, "unexpected pseudo-bci");
+    assert(false, "");
+#endif
+  }
+  _bci    = bci;
   _reexecute = vf->should_reexecute();
 #ifdef ASSERT
   _removed_monitors = false;
@@ -95,9 +121,21 @@ void vframeArrayElement::fill_in(compiledVFrame* vf, bool realloc_failures) {
         if (monitor->owner_is_scalar_replaced()) {
           dest->set_obj(nullptr);
         } else {
-          assert(monitor->owner() == nullptr || !monitor->owner()->is_unlocked(), "object must be null or locked");
-          dest->set_obj(monitor->owner());
-          monitor->lock()->move_to(monitor->owner(), dest->lock());
+          // JOM could deopt in monitorexit after object unlocked
+          // or in monitorenter before the object is locked
+          assert(monitor->owner() == nullptr || !monitor->owner()->is_unlocked() ||
+                 (index == list->length() - 1 && !vf->scope()->can_trust_lock_stack()),
+                 "object must be null or locked");
+          if (vf->scope()->in_monitor_exit() && index == list->length() - 1) {
+            // JOM hack: interpreter clears obj in BasicObjectLock before calling
+            // monitorexit, not after.
+            dest->set_obj(nullptr);
+          } else {
+            dest->set_obj(monitor->owner());
+          }
+          if (!ObjectMonitorMode::java()) {
+            monitor->lock()->move_to(monitor->owner(), dest->lock());
+          }
         }
       }
     }
@@ -183,25 +221,108 @@ void vframeArrayElement::unpack_on_stack(int caller_actual_parameters,
 
   // Look at bci and decide on bcp and continuation pc
   address bcp;
+  Bytecodes::Code raw_bc;
+
   // C++ interpreter doesn't need a pc since it will figure out what to do when it
   // begins execution
   address pc;
   bool use_next_mdp = false; // true if we should use the mdp associated with the next bci
                              // rather than the one associated with bcp
-  if (raw_bci() == SynchronizationEntryBCI) {
-    // We are deoptimizing while hanging in prologue code for synchronized method
-    bcp = method()->bcp_from(0); // first byte code
-    pc  = Interpreter::deopt_entry(vtos, 0); // step = 0 since we don't skip current bytecode
+  int bci = raw_bci();
+  if (bci < 0) {
+    assert(!should_reexecute(), "should reexecute bci %d?", raw_bci());
+/*
+  SynchronizationEntryBci      = -30,
+  BeforeBci                    = -2,
+  BeforeBciLocked              = -3,
+  AfterBci                     = -4,
+  AfterBciLocked               = -5,
+  UnwindBci                    = -6,
+  AfterExceptionBci            = -7,
+  UnknownBci                   = -8,
+  PrologueInvocationCounterBci = -9,
+  InvalidFrameStateBci         = -31,
+  MinBci                       = -31,      // minimum value allowed by debugInfo
+  PrologueLockBci              = -100,
+  EpilogueUnlockBci            = -200,
+  InvocationEntryBci           = -999,     // i.e., not a on-stack replacement compilation
+*/
+    switch (bci) {
+#if 0
+    case AfterBci:
+    case AfterExceptionBci:
+#endif
+    case EpilogueUnlockBci: {
+      // monitorexit
+      // return value is on the stack
+#if 1
+      // FIXME
+      // This may not be GC-safe, because an oop would not be in the oopmap.
+      // Also, GenerateOopMap::do_monitor_enter() has hard-coded signature
+      // that doesn't match what C1 uses.
+      // Need to check how signature-polymorphic calls work...
+      // We may need to make monitor entry points for interpreter and compiler
+      // all have the same signature, and different versions of monitorexit
+      // for each return type:
+      // return monitorexit(obj, return_value, exception);
+
+      // NOTE
+      // If unwinding with exception, need to pass exception to compiledMonitorExitWithException, or
+      // use exception unwind pc and primary/secondary continuation, which would require
+      // exception on stack probably.
+#endif
+      BasicType bt;
+      int compiledMethodExit_args = 3;
+// int caller_actual_parameters
+// int callee_parameters
+      if (method()->result_type() == T_VOID) {
+        bt = T_VOID;
+        assert(expressions()->size() == compiledMethodExit_args, "compiledMethodExit has 3 arguments");
+      } else {
+        assert(expressions()->size() == compiledMethodExit_args+1, "no return value");
+        bt = expressions()->at(compiledMethodExit_args)->type();
+      }
+      raw_bc = Bytecodes::_monitorexit;
+      bcp = method()->bcp_from(0); // not right, but no better choice
+      pc  = Interpreter::compiled_epilogue_monitor_exit_entry(as_TosState(bt));
+      break;
+    }
+    case PrologueLockBci:
+      // monitorenter
+      bcp = method()->bcp_from(0); // bcp is next instruction when entry uses step 0
+      raw_bc = Bytecodes::_monitorenter;
+      pc  = Interpreter::compiled_prologue_monitor_enter_entry();
+      break;
+#if 0
+    case SynchronizationEntryBCI:
+#endif
+    case PrologueInvocationCounterBci:
+      assert(is_top_frame, "pseudo-bci making call?");
+      // We are deoptimizing while hanging in prologue code for synchronized method
+      raw_bc = Bytecodes::_nop;
+      bcp = method()->bcp_from(0); // first byte code
+      pc  = Interpreter::deopt_entry(vtos, 0); // step = 0 since we don't skip current bytecode
+      break;
+    default:
+      fatal("unexpected pseudo-bci %d", bci);
+    }
   } else if (should_reexecute()) { //reexecute this bytecode
+#if 1
+    Bytecodes::Code code = method()->code_at(bci);
+    assert(code != Bytecodes::_monitorenter, "");
+    assert(code != Bytecodes::_monitorexit, "");
+#endif
     assert(is_top_frame, "reexecute allowed only for the top frame");
-    bcp = method()->bcp_from(bci());
+    bcp = method()->bcp_from(bci);
+    raw_bc = Bytecodes::cast(*bcp);
     pc  = Interpreter::deopt_reexecute_entry(method(), bcp);
   } else {
-    bcp = method()->bcp_from(bci());
+    bcp = method()->bcp_from(bci);
+    raw_bc = Bytecodes::cast(*bcp);
     pc  = Interpreter::deopt_continue_after_entry(method(), bcp, callee_parameters, is_top_frame);
     use_next_mdp = true;
   }
-  assert(Bytecodes::is_defined(*bcp), "must be a valid bytecode");
+  assert(Bytecodes::is_defined(raw_bc), "must be a valid bytecode");
 
   // Monitorenter and pending exceptions:
   //
@@ -217,10 +338,14 @@ void vframeArrayElement::unpack_on_stack(int caller_actual_parameters,
   //
   // For realloc failure exception we just pop frames, skip the guarantee.
 
-  assert(*bcp != Bytecodes::_monitorenter || is_top_frame, "a _monitorenter must be a top frame");
+#ifdef ASSERT
+  if (!ObjectMonitorMode::java()) {
+    assert(raw_bc != Bytecodes::_monitorenter || is_top_frame, "a _monitorenter must be a top frame");
+  }
+#endif
   assert(thread->deopt_compiled_method() != nullptr, "compiled method should be known");
   guarantee(realloc_failure_exception || !(thread->deopt_compiled_method()->is_compiled_by_c2() &&
-              *bcp == Bytecodes::_monitorenter             &&
+              raw_bc == Bytecodes::_monitorenter             &&
               exec_mode == Deoptimization::Unpack_exception),
             "shouldn't get exception during monitorenter");
 
@@ -308,7 +433,9 @@ void vframeArrayElement::unpack_on_stack(int caller_actual_parameters,
     top = iframe()->previous_monitor_in_interpreter_frame(top);
     BasicObjectLock* src = _monitors->at(index);
     top->set_obj(src->obj());
-    src->lock()->move_to(src->obj(), top->lock());
+    if (!ObjectMonitorMode::java()) {
+      src->lock()->move_to(src->obj(), top->lock());
+    }
   }
   if (ProfileInterpreter) {
     iframe()->interpreter_frame_set_mdp(0); // clear out the mdp.
@@ -555,6 +682,20 @@ void vframeArray::fill_in(JavaThread* thread,
   }
 }
 
+static bool invoke_has_member_arg(methodHandle caller, int bci, methodHandle callee) {
+  if (callee() == Universe::compiledMonitorEnter() ||
+      callee() == Universe::compiledMonitorExit())
+  {
+    // TODO: make Bytecode_invoke work for monitorenter/exit?
+    return false;
+  }
+  assert(bci >= 0, "");
+  Bytecode_invoke inv(caller, bci);
+  // invokedynamic instructions don't have a class but obviously don't have a MemberName appendix.
+  // NOTE:  Use machinery here that avoids resolving of any kind.
+  return !inv.is_invokedynamic() && MethodHandles::has_member_arg(inv.klass(), inv.name());
+}
+
 void vframeArray::unpack_to_stack(frame &unpack_frame, int exec_mode, int caller_actual_parameters) {
   // stack picture
   //   unpack_frame
@@ -603,11 +744,7 @@ void vframeArray::unpack_to_stack(frame &unpack_frame, int exec_mode, int caller
     } else {
       methodHandle caller(current, elem->method());
       methodHandle callee(current, element(index - 1)->method());
-      Bytecode_invoke inv(caller, elem->bci());
-      // invokedynamic instructions don't have a class but obviously don't have a MemberName appendix.
-      // NOTE:  Use machinery here that avoids resolving of any kind.
-      const bool has_member_arg =
-          !inv.is_invokedynamic() && MethodHandles::has_member_arg(inv.klass(), inv.name());
+      const bool has_member_arg = invoke_has_member_arg(caller, elem->raw_bci(), callee);
       callee_parameters = callee->size_of_parameters() + (has_member_arg ? 1 : 0);
       callee_locals     = callee->max_locals();
     }
@@ -620,6 +757,12 @@ void vframeArray::unpack_to_stack(frame &unpack_frame, int exec_mode, int caller
       const char* code_name;
       if (bci == SynchronizationEntryBCI) {
         code_name = "sync entry";
+      } else if (bci == UnwindBci || bci == AfterExceptionBci) {
+        code_name = "exception unwind";
+      } else if (bci == PrologueLockBci) {
+        code_name = "prologue monitorenter";
+      } else if (bci == EpilogueUnlockBci) {
+        code_name = "epilogue monitorexit";
       } else {
         Bytecodes::Code code = elem->method()->code_at(bci);
         code_name = Bytecodes::name(code);
@@ -629,6 +772,7 @@ void vframeArray::unpack_to_stack(frame &unpack_frame, int exec_mode, int caller
       st.print_cr("sp=" PTR_FORMAT, p2i(elem->iframe()->sp()));
       tty->print_raw(st.freeze());
     }
+    // JOM TODO: pass in callee to better handle pseudo-bcis
     elem->unpack_on_stack(caller_actual_parameters,
                           callee_parameters,
                           callee_locals,

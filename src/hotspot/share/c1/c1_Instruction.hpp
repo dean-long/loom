@@ -29,6 +29,7 @@
 #include "c1/c1_LIR.hpp"
 #include "c1/c1_ValueType.hpp"
 #include "ci/ciField.hpp"
+#include "runtime/synchronizer.hpp"
 
 // Predefined classes
 class ciField;
@@ -44,6 +45,7 @@ class IRScope;
 // serve factoring.
 
 class Instruction;
+class   Base;
 class   Phi;
 class   Local;
 class   Constant;
@@ -83,6 +85,7 @@ class       MonitorExit;
 class     Intrinsic;
 class     BlockBegin;
 class     BlockEnd;
+class       Start;
 class       Goto;
 class       If;
 class       Switch;
@@ -90,7 +93,6 @@ class         TableSwitch;
 class         LookupSwitch;
 class       Return;
 class       Throw;
-class       Base;
 class   RoundFP;
 class   UnsafeOp;
 class     UnsafeGet;
@@ -185,6 +187,7 @@ class InstructionVisitor: public StackObj {
   virtual void do_Return         (Return*          x) = 0;
   virtual void do_Throw          (Throw*           x) = 0;
   virtual void do_Base           (Base*            x) = 0;
+  virtual void do_Start          (Start*           x) = 0;
   virtual void do_OsrEntry       (OsrEntry*        x) = 0;
   virtual void do_ExceptionObject(ExceptionObject* x) = 0;
   virtual void do_RoundFP        (RoundFP*         x) = 0;
@@ -559,6 +562,7 @@ class Instruction: public CompilationResourceObj {
   virtual Return*           as_Return()          { return nullptr; }
   virtual Throw*            as_Throw()           { return nullptr; }
   virtual Base*             as_Base()            { return nullptr; }
+  virtual Start*            as_Start()           { return nullptr; }
   virtual RoundFP*          as_RoundFP()         { return nullptr; }
   virtual ExceptionObject*  as_ExceptionObject() { return nullptr; }
   virtual UnsafeOp*         as_UnsafeOp()        { return nullptr; }
@@ -1496,7 +1500,7 @@ LEAF(MonitorEnter, AccessMonitor)
   }
 
   // generic
-  virtual bool can_trap() const                  { return true; }
+  virtual bool can_trap() const                  { return DEBUG_ONLY(!ObjectMonitorMode::java()) NOT_DEBUG(true); }
 };
 
 
@@ -2103,21 +2107,46 @@ LEAF(Throw, BlockEnd)
 };
 
 
-LEAF(Base, BlockEnd)
+LEAF(Start, Goto)
  public:
   // creation
-  Base(BlockBegin* std_entry, BlockBegin* osr_entry) : BlockEnd(illegalType, nullptr, false) {
+  Start(BlockBegin* std_entry) : Goto(std_entry, false) {
     assert(std_entry->is_set(BlockBegin::std_entry_flag), "std entry must be flagged");
-    assert(osr_entry == nullptr || osr_entry->is_set(BlockBegin::osr_entry_flag), "osr entry must be flagged");
     BlockList* s = new BlockList(2);
-    if (osr_entry != nullptr) s->append(osr_entry);
-    s->append(std_entry); // must be default sux!
+    s->append(std_entry);
     set_sux(s);
   }
 
   // accessors
   BlockBegin* std_entry() const                  { return default_sux(); }
   BlockBegin* osr_entry() const                  { return number_of_sux() < 2 ? nullptr : sux_at(0); }
+  void set_osr_entry(BlockBegin* entry) {
+    assert(entry->is_set(BlockBegin::osr_entry_flag), "osr entry must be flagged");
+    assert(number_of_sux() == 1, "osr_entry already set");
+    sux()->insert_before(0, entry);
+    assert(this->osr_entry() == entry, "");
+    entry->add_predecessor(block());
+  }
+};
+
+
+LEAF(Base, Instruction)
+ private:
+  Start* _end; // last instruction of last prologue block
+ public:
+  // creation
+  Base() : Instruction(illegalType) { pin(); }
+
+  // accessors
+  Start* end() const       { return _end; }
+  void set_end(Start* end) { _end = end; }
+
+  BlockBegin* std_entry() const                  { return _end->std_entry(); }
+  BlockBegin* osr_entry() const                  { return _end->osr_entry(); }
+  void set_osr_entry(BlockBegin* osr_entry)      { _end->set_osr_entry(osr_entry); }
+
+  // generic
+  virtual void input_values_do(ValueVisitor* f)   { /* no values */ }
 };
 
 

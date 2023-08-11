@@ -42,13 +42,20 @@ inline const char* compilertype2name(CompilerType t) { return (uint)t < compiler
 
 // Handy constants for deciding which compiler mode to use.
 enum MethodCompilation {
-  InvocationEntryBci   = -1,     // i.e., not a on-stack replacement compilation
-  BeforeBci            = InvocationEntryBci,
-  AfterBci             = -2,
-  UnwindBci            = -3,
-  AfterExceptionBci    = -4,
-  UnknownBci           = -5,
-  InvalidFrameStateBci = -6
+  SynchronizationEntryBci      = -30,
+  BeforeBci                    = -2,
+  BeforeBciLocked              = -3,
+  AfterBci                     = -4,
+  AfterBciLocked               = -5,
+  UnwindBci                    = -6,
+  AfterExceptionBci            = -7,
+  UnknownBci                   = -8,
+  PrologueInvocationCounterBci = -9,
+  InvalidFrameStateBci         = -31,
+  MinBci                       = -31,      // minimum value allowed by debugInfo
+  PrologueLockBci              = -100,
+  EpilogueUnlockBci            = -200,
+  InvocationEntryBci           = -999,     // i.e., not a on-stack replacement compilation
 };
 
 // Enumeration to distinguish tiers of compilation

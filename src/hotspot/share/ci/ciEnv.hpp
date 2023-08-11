@@ -155,8 +155,11 @@ private:
                                       ciInstanceKlass* loading_klass);
 
   //
-  ciMethod*  get_monitor_method(bool enter);
-  ciKlass*   get_monitor_klass(bool enter);
+  ciMethod*  get_monitor_enter_method();
+  ciMethod*  get_monitor_exit_method();
+  ciMethod*  get_monitor_exit_with_exception_method();
+  ciMethod*  get_monitor_method(bool enter, bool with_exception = false);
+  ciKlass*   get_monitor_klass();
 
   // Helper methods
   bool       check_klass_accessibility(ciKlass* accessing_klass,
@@ -361,7 +364,7 @@ public:
 
   // Cache DTrace flags
   void  cache_dtrace_flags();
-  bool  dtrace_method_probes()   const { return _dtrace_method_probes; }
+  bool  dtrace_method_probes()   const { return _dtrace_method_probes || UseNewCode2; }
   bool  dtrace_alloc_probes()    const { return _dtrace_alloc_probes; }
 
   // The compiler task which has created this env.
@@ -514,6 +517,10 @@ public:
   void process_invokedynamic(const constantPoolHandle &cp, int index, JavaThread* thread);
   void process_invokehandle(const constantPoolHandle &cp, int index, JavaThread* thread);
   void find_dynamic_call_sites();
+
+  ciMethod* get_monitor_method(bool& will_link, ciSignature* *declared_signature_result,
+                               bool enter, bool with_exception = false);
+  ciKlass* get_monitor_holder();
 };
 
 #endif // SHARE_CI_CIENV_HPP

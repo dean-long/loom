@@ -25,6 +25,8 @@
 
 package java.lang;
 
+import jdk.internal.vm.annotation.DontInline;
+import jdk.internal.vm.annotation.ForceInline;
 import jdk.internal.vm.annotation.IntrinsicCandidate;
 import jdk.internal.vm.annotation.ReservedStackAccess;
 
@@ -289,6 +291,7 @@ final class MonitorSupport {
 
     static class Fast implements Policy {
 
+        @ForceInline
         @ReservedStackAccess
         public void monitorEnter(Object o) {
             if (syncEnabled == 0)
@@ -299,6 +302,7 @@ final class MonitorSupport {
             }
         }
 
+        @ForceInline
         @ReservedStackAccess
         public void monitorExit(Object o) {
             if (syncEnabled == 0)
@@ -377,16 +381,22 @@ final class MonitorSupport {
         // lowest level enter/exit via markWord ops
 
         private static boolean quickLock(Thread current, Object lockee) {
+            if (!current.pushFast(lockee)) {
+                abort("no headroom for quickLock");
+                return false;
+            }
             if (casLockState(lockee, LOCKED, UNLOCKED)) {
-                current.push(lockee);
                 return true;
             }
+            current.pop(lockee);
             return false;
         }
 
         private static boolean quickUnlock(Thread current, Object lockee) {
             if (casLockState(lockee, UNLOCKED, LOCKED)) {
                 current.pop(lockee);
+                // FIXME: deopt here or later on the unwind path is a problem:
+                // BOL is now stale and debug state still contains the monitor
                 if (current.lockCount(lockee) > 0) {
                     abort("Bad lockstack: unlocked object still on stack");
                 }
@@ -398,6 +408,7 @@ final class MonitorSupport {
 
         // Attempted fast-path monitor entry and exit
 
+        @ForceInline
         static boolean quickEnter(Thread current, Object lockee) {
             while (true) {
                 int lockState = getLockState(lockee);
@@ -406,6 +417,9 @@ final class MonitorSupport {
                     if (current.lockCount(lockee) > 0) {
                         abort("Bad lockstack: lockee unlocked but on stack");
                     }
+                    if (!current.canPushFast()) {
+                        return false; // take slow path
+                    }
                     if (quickLock(current, lockee)) {
                         return true;
                     }
@@ -413,8 +427,7 @@ final class MonitorSupport {
                 case LOCKED:
                     // recursive locking ?
                     if (current.hasLockedDirect(lockee)) {
-                        current.push(lockee);
-                        return true;
+                        return current.pushFast(lockee);
                     }
                     return false; // take slow path
                 case INFLATED:
@@ -426,6 +439,7 @@ final class MonitorSupport {
             }
         }
 
+        @ForceInline
         static boolean quickExit(Thread current, Object lockee) {
             while (true) {
                 int lockState = getLockState(lockee);
@@ -461,7 +475,14 @@ final class MonitorSupport {
         }
     }
 
+    final static void abort(String error, Object obj) {
+        new Exception(error + " (obj "+obj+")").printStackTrace();
+        abort0(error, obj);
+    }
 
+    final static void abort(String error) {
+        abort(error, null);
+    }
 
     // Native hooks into the VM - these are registered by the
     // VM, not via registerNatives, as the latter calls back into
@@ -469,7 +490,7 @@ final class MonitorSupport {
 
     final static native void log(String msg);
     final static native void log_exitAll(int count);
-    final static native void abort(String error);
+    final static native void abort0(String error, Object obj);
     final static native void abortException(String msg, Throwable t);
     @IntrinsicCandidate
     final static native boolean casLockState(Object o, int to, int from);

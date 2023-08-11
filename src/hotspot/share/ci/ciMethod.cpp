@@ -875,9 +875,23 @@ ciField* ciMethod::get_field_at_bci(int bci, bool &will_link) {
 // ------------------------------------------------------------------
 // ciMethod::get_method_at_bci
 ciMethod* ciMethod::get_method_at_bci(int bci, bool &will_link, ciSignature* *declared_signature) {
+#if 1
+  Bytecodes::Code bytecode = java_code_at_bci(bci);
+  ciMethod* m = nullptr;
+
+  if (bytecode == Bytecodes::_monitorenter) {
+    m = CURRENT_ENV->get_monitor_method(will_link, declared_signature, true);
+  } else if (bytecode == Bytecodes::_monitorexit) {
+    m = CURRENT_ENV->get_monitor_method(will_link, declared_signature, false);
+  }
+  if (m != nullptr) {
+    return m;
+  }
+#endif
   ciBytecodeStream iter(this);
   iter.reset_to_bci(bci);
   iter.next();
+
   return iter.get_method(will_link, declared_signature);
 }
 

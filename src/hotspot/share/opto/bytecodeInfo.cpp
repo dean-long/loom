@@ -363,6 +363,11 @@ bool InlineTree::try_to_inline(ciMethod* callee_method, ciMethod* caller_method,
                                int caller_bci, JVMState* jvms, ciCallProfile& profile,
                                bool& should_delay) {
 
+  if (ObjectMonitorMode::java() && callee_method->get_Method()->has_monitors()) {
+    set_msg("JOM C2 method has monitors");
+    return false;
+  }
+
   if (ClipInlining && (int)count_inline_bcs() >= DesiredMethodLimit) {
     if (!callee_method->force_inline() || !IncrementalInline) {
       set_msg("size > DesiredMethodLimit");
@@ -502,19 +507,20 @@ bool InlineTree::pass_initial_checks(ciMethod* caller_method, int caller_bci, ci
   }
   if( !UseInterpreter ) /* running Xcomp */ {
 #ifdef C2_PATCH
-    if (!callee_method->is_object_monitorenter_exit()) {
+    if (callee_method->is_object_monitorenter_exit()) {
+      return true;
+    }
 #endif
     // Checks that constant pool's call site has been visited
     // stricter than callee_holder->is_initialized()
     ciBytecodeStream iter(caller_method);
     iter.force_bci(caller_bci);
     Bytecodes::Code call_bc = iter.cur_bc();
-    // An invokedynamic instruction does not have a klass.
-#ifndef C2_PATCH
-    if (call_bc != Bytecodes::_invokedynamic) {
-#else
-      if (call_bc != Bytecodes::_invokedynamic && call_bc != Bytecodes::_monitorenter && call_bc != Bytecodes::_monitorexit) {
+#ifdef C2_PATCH
+    assert(call_bc != Bytecodes::_monitorenter && call_bc != Bytecodes::_monitorexit, "");
 #endif
+    // An invokedynamic instruction does not have a klass.
+    if (call_bc != Bytecodes::_invokedynamic) {
       int index = iter.get_index_u2_cpcache();
       if (!caller_method->is_klass_loaded(index, call_bc, true)) {
         return false;
@@ -525,9 +531,6 @@ bool InlineTree::pass_initial_checks(ciMethod* caller_method, int caller_bci, ci
       }
     }
   }
-#ifdef C2_PATCH
-  }
-#endif
   return true;
 }
 

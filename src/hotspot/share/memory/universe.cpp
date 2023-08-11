@@ -137,6 +137,9 @@ LatestMethodCache* Universe::_throw_no_such_method_error_cache = nullptr;
 LatestMethodCache* Universe::_do_stack_walk_cache     = nullptr;
 
 // Java object monitor support
+LatestMethodCache* Universe::_object_compiledMonitorEnter_cache = nullptr;
+LatestMethodCache* Universe::_object_compiledMonitorExit_cache = nullptr;
+LatestMethodCache* Universe::_object_compiledMonitorExitWithException_cache = nullptr;
 LatestMethodCache* Universe::_object_monitorEnter_cache = nullptr;
 LatestMethodCache* Universe::_object_monitorExit_cache = nullptr;
 LatestMethodCache* Universe::_object_monitorExitAll_cache = nullptr;
@@ -144,10 +147,6 @@ LatestMethodCache* Universe::_object_monitorNotifyAll_cache = nullptr;
 LatestMethodCache* Universe::_object_monitorWaitUninterruptibly_cache = nullptr;
 LatestMethodCache* Universe::_object_monitorJNIEnter_cache = nullptr;
 LatestMethodCache* Universe::_object_monitorJNIExit_cache = nullptr;
-#ifdef C2_PATCH
-LatestMethodCache* Universe::_object_compilerMonitorEnter_cache = NULL;
-LatestMethodCache* Universe::_object_compilerMonitorExit_cache = NULL;
-#endif
 Method* Universe::_object_monitorEnter = nullptr;
 Method* Universe::_object_monitorExit  = nullptr;
 Method* Universe::_object_monitorExitAll  = nullptr;
@@ -254,6 +253,9 @@ void Universe::metaspace_pointers_do(MetaspaceClosure* it) {
   _throw_illegal_access_error_cache->metaspace_pointers_do(it);
   _throw_no_such_method_error_cache->metaspace_pointers_do(it);
   _do_stack_walk_cache->metaspace_pointers_do(it);
+  _object_compiledMonitorEnter_cache->metaspace_pointers_do(it);
+  _object_compiledMonitorExit_cache->metaspace_pointers_do(it);
+  _object_compiledMonitorExitWithException_cache->metaspace_pointers_do(it);
   _object_monitorEnter_cache->metaspace_pointers_do(it);
   _object_monitorExit_cache->metaspace_pointers_do(it);
   _object_monitorExitAll_cache->metaspace_pointers_do(it);
@@ -261,10 +263,6 @@ void Universe::metaspace_pointers_do(MetaspaceClosure* it) {
   _object_monitorWaitUninterruptibly_cache->metaspace_pointers_do(it);
   _object_monitorJNIEnter_cache->metaspace_pointers_do(it);
   _object_monitorJNIExit_cache->metaspace_pointers_do(it);
-#ifdef C2_PATCH
-  _object_compilerMonitorEnter_cache->metaspace_pointers_do(it);
-  _object_compilerMonitorExit_cache->metaspace_pointers_do(it);
-#endif
 }
 
 #if INCLUDE_CDS_JAVA_HEAP
@@ -316,6 +314,9 @@ void Universe::serialize(SerializeClosure* f) {
   _throw_illegal_access_error_cache->serialize(f);
   _throw_no_such_method_error_cache->serialize(f);
   _do_stack_walk_cache->serialize(f);
+  _object_compiledMonitorEnter_cache->serialize(f);
+  _object_compiledMonitorExit_cache->serialize(f);
+  _object_compiledMonitorExitWithException_cache->serialize(f);
   _object_monitorEnter_cache->serialize(f);
   _object_monitorExit_cache->serialize(f);
   _object_monitorExitAll_cache->serialize(f);
@@ -323,10 +324,6 @@ void Universe::serialize(SerializeClosure* f) {
   _object_monitorWaitUninterruptibly_cache->serialize(f);
   _object_monitorJNIEnter_cache->serialize(f);
   _object_monitorJNIExit_cache->serialize(f);
-#ifdef C2_PATCH
-  _object_compilerMonitorEnter_cache->serialize(f);
-  _object_compilerMonitorExit_cache->serialize(f);
-#endif
 }
 
 
@@ -852,6 +849,9 @@ jint universe_init() {
   Universe::_throw_illegal_access_error_cache = new LatestMethodCache();
   Universe::_throw_no_such_method_error_cache = new LatestMethodCache();
   Universe::_do_stack_walk_cache = new LatestMethodCache();
+  Universe::_object_compiledMonitorEnter_cache = new LatestMethodCache();
+  Universe::_object_compiledMonitorExit_cache = new LatestMethodCache();
+  Universe::_object_compiledMonitorExitWithException_cache = new LatestMethodCache();
   Universe::_object_monitorEnter_cache = new LatestMethodCache();
   Universe::_object_monitorExit_cache = new LatestMethodCache();
   Universe::_object_monitorExitAll_cache = new LatestMethodCache();
@@ -859,10 +859,6 @@ jint universe_init() {
   Universe::_object_monitorWaitUninterruptibly_cache = new LatestMethodCache();
   Universe::_object_monitorJNIEnter_cache = new LatestMethodCache();
   Universe::_object_monitorJNIExit_cache = new LatestMethodCache();
-#ifdef C2_PATCH
-  Universe::_object_compilerMonitorEnter_cache = new LatestMethodCache();
-  Universe::_object_compilerMonitorExit_cache = new LatestMethodCache();
-#endif
 
 #if INCLUDE_CDS
   DynamicArchive::check_for_dynamic_dump();
@@ -991,6 +987,16 @@ void initialize_known_method(LatestMethodCache* method_cache,
   method_cache->init(ik, m);
 }
 
+void initialize_known_method(LatestMethodCache* method_cache,
+                             InstanceKlass* ik,
+                             const char* method,
+                             const char* signature,
+                             bool is_static, TRAPS)
+{
+  TempNewSymbol sig = SymbolTable::new_symbol(signature);
+  initialize_known_method(method_cache, ik, method, sig, is_static, THREAD);
+}
+
 void Universe::initialize_known_methods(TRAPS) {
   // Set up static method for registering finalizers
   initialize_known_method(_finalizer_register_cache,
@@ -1021,6 +1027,24 @@ void Universe::initialize_known_methods(TRAPS) {
                           vmSymbols::doStackWalk_signature(), false, CHECK);
 
   // setup Object monitor methods
+  initialize_known_method(_object_compiledMonitorEnter_cache,
+                          vmClasses::Object_klass(),
+                          "compiledMonitorEnter",
+                          "(Ljava/lang/Object;I)I",
+                          true, CHECK);
+
+  initialize_known_method(_object_compiledMonitorExit_cache,
+                          vmClasses::Object_klass(),
+                          "compiledMonitorExit",
+                          "(Ljava/lang/Object;I)V",
+                          true, CHECK);
+
+  initialize_known_method(_object_compiledMonitorExitWithException_cache,
+                          vmClasses::Object_klass(),
+                          "compiledMonitorExitUnwind",
+                          "(Ljava/lang/Object;ILjava/lang/Throwable;)Ljava/lang/Throwable;",
+                          true, CHECK);
+
   initialize_known_method(_object_monitorEnter_cache,
                           vmClasses::Object_klass(),
                           "monitorEnter",
@@ -1043,6 +1067,7 @@ void Universe::initialize_known_methods(TRAPS) {
                           vmClasses::Object_klass(),
                           "notifyAll",
                           vmSymbols::void_method_signature(), false /* not static */, CHECK);
+#if 0
   _object_monitorNotifyAll = object_monitorNotifyAll_method();
 
   initialize_known_method(_object_monitorWaitUninterruptibly_cache,
@@ -1062,18 +1087,6 @@ void Universe::initialize_known_methods(TRAPS) {
                           "jniExit",
                           vmSymbols::object_void_signature(), true, CHECK);
   _object_monitorJNIExit = object_monitorJNIExit_method();
-
-#ifdef C2_PATCH
-  initialize_known_method(_object_compilerMonitorEnter_cache,
-                          vmClasses::Object_klass(),
-                          "compilerMonitorEnter",
-                          vmSymbols::object_void_signature(), true, CHECK);
-
-  initialize_known_method(_object_compilerMonitorExit_cache,
-                          vmClasses::Object_klass(),
-                          "compilerMonitorEnter",
-                          vmSymbols::object_void_signature(), true, CHECK);
-
 #endif
 }
 

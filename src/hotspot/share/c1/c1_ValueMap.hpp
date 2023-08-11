@@ -201,6 +201,7 @@ class ValueNumberingVisitor: public InstructionVisitor {
   void do_Return         (Return*          x) { /* nothing to do */ }
   void do_Throw          (Throw*           x) { /* nothing to do */ }
   void do_Base           (Base*            x) { /* nothing to do */ }
+  void do_Start          (Start*           x) { /* nothing to do */ }
   void do_OsrEntry       (OsrEntry*        x) { /* nothing to do */ }
   void do_ExceptionObject(ExceptionObject* x) { /* nothing to do */ }
   void do_RoundFP        (RoundFP*         x) { /* nothing to do */ }

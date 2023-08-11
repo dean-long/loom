@@ -120,6 +120,9 @@ class Universe: AllStatic {
   static LatestMethodCache* _throw_no_such_method_error_cache; // Unsafe.throwNoSuchMethodError() method
   static LatestMethodCache* _do_stack_walk_cache;      // method for stack walker callback
 
+  static LatestMethodCache* _object_compiledMonitorEnter_cache;
+  static LatestMethodCache* _object_compiledMonitorExit_cache;
+  static LatestMethodCache* _object_compiledMonitorExitWithException_cache;
   static LatestMethodCache* _object_monitorEnter_cache; // java.lang.Object::monitorEnter(obj)
   static LatestMethodCache* _object_monitorExit_cache;  // java.lang.Object::monitorExit(obj)
   static LatestMethodCache* _object_monitorExitAll_cache;  // java.lang.Object::monitorExitAll(count)
@@ -127,11 +130,6 @@ class Universe: AllStatic {
   static LatestMethodCache* _object_monitorWaitUninterruptibly_cache;  // java.lang.Object::monitorWaitUninterruptibly(obj)
   static LatestMethodCache* _object_monitorJNIEnter_cache; // java.lang.Object::monitorEnter(obj)
   static LatestMethodCache* _object_monitorJNIExit_cache;  // java.lang.Object::monitorExit(obj)
-#ifdef C2_PATCH
-  static LatestMethodCache* _object_compilerMonitorEnter_cache;
-  static LatestMethodCache* _object_compilerMonitorExit_cache;
-
-#endif
 
   static Method* _object_monitorEnter; // java.lang.Object::monitorEnter(obj)
   static Method* _object_monitorExit;  // java.lang.Object::monitorExit(obj)
@@ -294,6 +292,20 @@ class Universe: AllStatic {
 
   static Method*      do_stack_walk_method()          { return _do_stack_walk_cache->get_method(); }
 
+  // java.lang.Object:
+  // void compiledMonitorEnter(Object obj, int depth)
+  static Method* compiledMonitorEnter() {
+    return _object_compiledMonitorEnter_cache->get_method();
+  }
+  // compiledMonitorExit(Object obj, int depth)
+  static Method* compiledMonitorExit()  {
+    return _object_compiledMonitorExit_cache->get_method();
+  }
+  // Throwable compiledMonitorExitWithException(Object obj, int depth, Throwable)
+  static Method* compiledMonitorExitWithException()  {
+    return _object_compiledMonitorExitWithException_cache->get_method();
+  }
+
   static Method*      object_monitorEnter_method()        { return _object_monitorEnter_cache->get_method(); }
   static Method*      object_monitorExit_method()         { return _object_monitorExit_cache->get_method(); }
   static Method*      object_monitorExitAll_method()      { return _object_monitorExitAll_cache->get_method(); }
@@ -301,17 +313,10 @@ class Universe: AllStatic {
   static Method**     object_monitorExit_addr()           { return &_object_monitorExit; }
   static Method**     object_monitorExitAll_addr()        { return &_object_monitorExitAll; }
   static Method*      object_monitorNotifyAll_method()    { return _object_monitorNotifyAll_cache->get_method(); }
-  static Method**     object_monitorNotifyAll_addr()      { return &_object_monitorNotifyAll; }
   static Method*      object_monitorWaitUninterruptibly_method()    { return _object_monitorWaitUninterruptibly_cache->get_method(); }
-  static Method**     object_monitorWaitUninterruptibly_addr()      { return &_object_monitorWaitUninterruptibly; }
   static Method*      object_monitorJNIEnter_method()   { return _object_monitorJNIEnter_cache->get_method(); }
   static Method*      object_monitorJNIExit_method()    { return _object_monitorJNIExit_cache->get_method(); }
 
-#ifdef C2_PATCH
-  static Method*      object_compilerMonitorEnter_method() { return _object_compilerMonitorEnter_cache->get_method(); }
-  static Method*      object_compilerMonitorExit_method() { return _object_compilerMonitorEnter_cache->get_method(); }
-
-#endif
   static oop          the_null_sentinel();
   static address      the_null_sentinel_addr()        { return (address) &_the_null_sentinel;  }
 

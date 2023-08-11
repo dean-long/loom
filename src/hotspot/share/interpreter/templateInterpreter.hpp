@@ -124,10 +124,15 @@ class TemplateInterpreter: public AbstractInterpreter {
   static EntryPoint _safept_entry;
 
   static address _invoke_return_entry[number_of_return_addrs];           // for invokestatic, invokespecial, invokevirtual return entries
-  static address _monitor_enter_return_entry;
-  static address _monitor_exit_return_entry;
   static address _invokeinterface_return_entry[number_of_return_addrs];  // for invokeinterface return entries
   static address _invokedynamic_return_entry[number_of_return_addrs];    // for invokedynamic return entries
+  // JOM
+  static address _monitor_enter_return_entry;
+  static address _monitor_exit_return_entry;
+  static address _compiled_monitor_enter_entry;
+  static address _compiled_monitor_exit_entry;
+  static address _compiled_prologue_monitor_enter_entry;
+  static EntryPoint _compiled_epilogue_monitor_exit_entry;
 
   static DispatchTable _active_table;                           // the active    dispatch table (used by the interpreter for dispatch)
   static DispatchTable _normal_table;                           // the normal    dispatch table (used to set the active table in normal mode)
@@ -171,6 +176,12 @@ class TemplateInterpreter: public AbstractInterpreter {
   static address*   invoke_return_entry_table()                 { return _invoke_return_entry; }
   static address    monitor_enter_return_entry_adr()            { return _monitor_enter_return_entry; }
   static address    monitor_exit_return_entry_adr()             { return _monitor_exit_return_entry; }
+  static address    compiled_monitor_enter_entry()              { return _compiled_monitor_enter_entry; }
+  static address    compiled_monitor_exit_entry()               { return _compiled_monitor_exit_entry; }
+  static address    compiled_prologue_monitor_enter_entry()     { return _compiled_prologue_monitor_enter_entry; }
+  static address    compiled_epilogue_monitor_exit_entry(TosState state) {
+    return _compiled_epilogue_monitor_exit_entry.entry(state);
+  }
   static address*   invokeinterface_return_entry_table()        { return _invokeinterface_return_entry; }
   static address*   invokedynamic_return_entry_table()          { return _invokedynamic_return_entry; }
   static int        TosState_as_index(TosState state);

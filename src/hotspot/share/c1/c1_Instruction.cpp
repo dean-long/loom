@@ -779,13 +779,8 @@ bool BlockBegin::try_merge(ValueStack* new_state, bool has_irreducible_loops) {
     assert(existing_state->locals_size() == new_state->locals_size(), "not matching");
     assert(existing_state->stack_size() == new_state->stack_size(), "not matching");
 
-    if (is_set(BlockBegin::was_visited_flag)) {
+    if (is_set(BlockBegin::was_visited_flag) && is_set(BlockBegin::parser_loop_header_flag)) {
       TRACE_PHI(tty->print_cr("loop header block, phis must be present"));
-
-      if (!is_set(BlockBegin::parser_loop_header_flag)) {
-        // this actually happens for complicated jsr/ret structures
-        return false; // BAILOUT in caller
-      }
 
       for_each_local_value(existing_state, index, existing_value) {
         Value new_value = new_state->local_at(index);
@@ -819,6 +814,11 @@ bool BlockBegin::try_merge(ValueStack* new_state, bool has_irreducible_loops) {
 #endif
 
     } else {
+      if (is_set(BlockBegin::was_visited_flag) && !is_set(BlockBegin::exception_entry_flag)) {
+        // this actually happens for complicated jsr/ret structures
+        return false; // BAILOUT in caller
+      }
+
       TRACE_PHI(tty->print_cr("creating phi functions on demand"));
 
       // create necessary phi functions for stack

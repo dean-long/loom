@@ -317,8 +317,8 @@ class DebugInfoReadStream : public CompressedReadStream {
   }
   ScopeValue* read_object_value(bool is_auto_box);
   ScopeValue* get_cached_object();
-  // BCI encoding is mostly unsigned, but -1 is a distinguished value
-  int read_bci() { return read_int() + InvocationEntryBci; }
+  // BCI encoding is mostly unsigned, except for a few distinguished values
+  int read_bci() { return read_int() + MinBci; }
 };
 
 // DebugInfoWriteStream specializes CompressedWriteStream for
@@ -331,7 +331,7 @@ class DebugInfoWriteStream : public CompressedWriteStream {
  public:
   DebugInfoWriteStream(DebugInformationRecorder* recorder, int initial_size);
   void write_handle(jobject h);
-  void write_bci(int bci) { write_int(bci - InvocationEntryBci); }
+  void write_bci(int bci) { write_int(bci - MinBci); }
 
   void write_metadata(Metadata* m);
 };

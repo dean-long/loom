@@ -60,11 +60,14 @@
 #include "utilities/decoder.hpp"
 #include "utilities/formatBuffer.hpp"
 
-RegisterMap::RegisterMap(JavaThread *thread, UpdateMap update_map, ProcessFrames process_frames, WalkContinuation walk_cont) {
+RegisterMap::RegisterMap(JavaThread *thread, UpdateMap update_map, ProcessFrames process_frames, WalkContinuation walk_cont, Monitors monitors) {
   _thread         = thread;
   _update_map     = update_map == UpdateMap::include;
   _process_frames = process_frames == ProcessFrames::include;
   _walk_cont      = walk_cont == WalkContinuation::include;
+#if 1
+  _monitors       = monitors == Monitors::include;
+#endif
   clear();
   DEBUG_ONLY (_update_for_id = nullptr;)
   NOT_PRODUCT(_skip_missing = false;)
@@ -74,6 +77,9 @@ RegisterMap::RegisterMap(JavaThread *thread, UpdateMap update_map, ProcessFrames
     _chunk = stackChunkHandle(Thread::current()->handle_area()->allocate_null_handle(), true /* dummy */);
   }
   _chunk_index = -1;
+#if 1
+  _callee_locks = 0;
+#endif
 
 #ifndef PRODUCT
   for (int i = 0; i < reg_count ; i++ ) _location[i] = nullptr;
@@ -85,6 +91,9 @@ RegisterMap::RegisterMap(oop continuation, UpdateMap update_map) {
   _update_map     = update_map == UpdateMap::include;
   _process_frames = false;
   _walk_cont      = true;
+#if 1
+  _monitors       = false;
+#endif
   clear();
   DEBUG_ONLY (_update_for_id = nullptr;)
   NOT_PRODUCT(_skip_missing = false;)
@@ -92,6 +101,9 @@ RegisterMap::RegisterMap(oop continuation, UpdateMap update_map) {
 
   _chunk = stackChunkHandle(Thread::current()->handle_area()->allocate_null_handle(), true /* dummy */);
   _chunk_index = -1;
+#if 1
+  _callee_locks = 0;
+#endif
 
 #ifndef PRODUCT
   for (int i = 0; i < reg_count ; i++ ) _location[i] = nullptr;
@@ -105,6 +117,9 @@ RegisterMap::RegisterMap(const RegisterMap* map) {
   _update_map            = map->update_map();
   _process_frames        = map->process_frames();
   _walk_cont             = map->_walk_cont;
+#if 1
+  _monitors              = map->_monitors;
+#endif
   _include_argument_oops = map->include_argument_oops();
   DEBUG_ONLY (_update_for_id = map->_update_for_id;)
   NOT_PRODUCT(_skip_missing = map->_skip_missing;)
@@ -113,6 +128,9 @@ RegisterMap::RegisterMap(const RegisterMap* map) {
   // only the original RegisterMap's handle lives long enough for StackWalker; this is bound to cause trouble with nested continuations.
   _chunk = map->_chunk;
   _chunk_index = map->_chunk_index;
+#if 1
+  _callee_locks = map->_callee_locks;
+#endif
 
   pd_initialize_from(map);
   if (update_map()) {
@@ -519,7 +537,7 @@ void frame::print_value_on(outputStream* st, JavaThread *thread) const {
     InterpreterCodelet* desc = Interpreter::codelet_containing(pc());
     if (desc != nullptr) {
       st->print("~");
-      desc->print_on(st);
+      desc->print_on(st, false);
       NOT_PRODUCT(begin = desc->code_begin(); end = desc->code_end();)
     } else {
       st->print("~interpreter");
@@ -910,9 +928,6 @@ void frame::oops_interpreted_do(OopClosure* f, const RegisterMap* map, bool quer
 
   int max_locals = m->is_native() ? m->size_of_parameters() : m->max_locals();
 
-  Symbol* signature = nullptr;
-  bool has_receiver = false;
-
   // Process a callee's arguments if we are at a call site
   // (i.e., if we are at an invoke bytecode)
   // This is used sometimes for calling into the VM, not for another
@@ -920,11 +935,11 @@ void frame::oops_interpreted_do(OopClosure* f, const RegisterMap* map, bool quer
   if (!m->is_native()) {
     Bytecode_invoke call = Bytecode_invoke_check(m, bci);
     if (map != nullptr && call.is_valid()) {
-      signature = call.signature();
-      has_receiver = call.has_receiver();
       if (map->include_argument_oops() &&
           interpreter_frame_expression_stack_size() > 0) {
         ResourceMark rm(thread);  // is this right ???
+        Symbol* signature = call.signature();
+        bool has_receiver = call.has_receiver();
         // we are at a call site & the expression stack is not empty
         // => process callee's arguments
         //

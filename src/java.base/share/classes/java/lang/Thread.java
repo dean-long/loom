@@ -2416,6 +2416,8 @@ public class Thread implements Runnable {
         holder = null;
     }
 
+    int debug;
+
     // Tracking of locked objects to complement the use of native
     // BasicObjectLock in the VM frames. Synchronized method exit
     // specifically needs this to find which object(s) to unlock.
@@ -2447,14 +2449,32 @@ public class Thread implements Runnable {
         MonitorSupport.log("Expanded thread lockStack to size " + lockStack.length);
     }
 
-    void push(Object lockee) {
+    boolean push(Object lockee, boolean allow_grow) {
         if (this != Thread.currentThread()) MonitorSupport.abort("invariant");
         if (lockStackPos == lockStack.length) {
-            grow();
+            if (allow_grow) {
+              grow();
+            } else {
+              return false;
+            }
         }
         lockStack[lockStackPos++] = lockee;
+        return true;
     }
 
+    void push(Object lockee)        { push(lockee, true); }
+
+    boolean pushFast(Object lockee) { return push(lockee, false); }
+
+    boolean canPushFast()           { return lockStackPos < lockStack.length; }
+
+// TODO: need to do something like:
+// 1) disable safepoints/force inlining
+// 2) set a "transaction complete" flag
+// 3) update a monitor_enter/exit state
+// so deopt/exception handling can know how far we got
+// or "defer" computing caller monitors until callee finishes
+// (no, doesn't work for stack walk, only deopt)
     Object pop() {
         if (this != Thread.currentThread()) MonitorSupport.abort("invariant");
         // If we have a bug we can't trigger throwing AIOOBE as that uses
@@ -2482,17 +2502,24 @@ public class Thread implements Runnable {
         if (this != Thread.currentThread()) MonitorSupport.abort("invariant");
         // If we have a bug we can't trigger throwing AIOOBE as that uses
         // synchronized code and we get infinite recursion.
+        if (lockStackPos < 1 || lockStackPos - 1 >= lockStack.length) {
+            String msg = "peek with lockStackPos "+ lockStackPos;
+            new Exception(msg).printStackTrace();
+            MonitorSupport.abort(msg);
+        }
         if (lockStackPos == 0) MonitorSupport.abort("nothing to pop!");
         return lockStack[lockStackPos - 1];
     }
 
     // This count is only useful for fast-locked lockees
     int lockCount(Object lockee) {
+if (this != Thread.currentThread()) MonitorSupport.abort("invariant");
         if (lockee == null) MonitorSupport.abort("lockCount(null) was called!");
         int count = 0;
-        for (Object i : lockStack) {
-            if (i == lockee)
+        for (int i = 0; i < lockStackPos; ++i) {
+            if (lockStack[i] == lockee) {
                 count++;
+            }
         }
         return count;
     }
@@ -2500,6 +2527,7 @@ public class Thread implements Runnable {
     // Queries if lockee is directly, or indirectly
     // in the lockStack, or JNI list
     boolean hasLocked(Object lockee) {
+if (this != Thread.currentThread()) MonitorSupport.abort("invariant");
         // Search backwards as it is more likely that the object
         // was recently locked.
         for (int i = lockStackPos - 1; i >= 0; i--) {
@@ -2519,8 +2547,9 @@ public class Thread implements Runnable {
     // Queries if lockee is directly
     // in the lockStack,
     boolean hasLockedDirect(Object lockee) {
-        for (Object o : lockStack) {
-            if (o == lockee) {
+if (this != Thread.currentThread()) MonitorSupport.abort("invariant");
+        for (int i = 0; i < lockStackPos; ++i) {
+            if (lockStack[i] == lockee) {
                  return true;
             }
         }

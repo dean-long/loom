@@ -380,7 +380,6 @@ class MonitorExitStub: public MonitorAccessStub {
       _compute_lock(compute_lock), _monitor_ix(monitor_ix) { }
   virtual void emit_code(LIR_Assembler* e);
   virtual void visit(LIR_OpVisitState* visitor) {
-    assert(_obj_reg->is_illegal(), "unused");
     if (_compute_lock) {
       visitor->do_temp(_lock_reg);
     } else {

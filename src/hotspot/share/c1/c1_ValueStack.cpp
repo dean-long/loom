@@ -38,7 +38,16 @@ ValueStack::ValueStack(IRScope* scope, ValueStack* caller_state)
 , _locals(scope->method()->max_locals(), scope->method()->max_locals(), nullptr)
 , _stack(scope->method()->max_stack())
 , _locks(nullptr)
+, _at_monitor_enter(false)
+, _in_monitor_enter_count(0)
 {
+  if (caller_state != nullptr) {
+    _in_monitor_enter_count += caller_state->_in_monitor_enter_count + caller_state->_at_monitor_enter ? 1 : 0;
+    // In theory, there could be arbitrarily nested/recursive monitorenters in JOM code,
+    // because of synchronized code like fillInStackTrace() getting called
+    // in the Throwable ctor.
+    assert(_in_monitor_enter_count <= total_locks_size(), "");
+  }
   verify();
 }
 
@@ -50,19 +59,43 @@ ValueStack::ValueStack(ValueStack* copy_from, Kind kind, int bci)
   , _locals(copy_from->locals_size_for_copy(kind))
   , _stack(copy_from->stack_size_for_copy(kind))
   , _locks(copy_from->locks_size() == 0 ? nullptr : new Values(copy_from->locks_size()))
+  , _at_monitor_enter(copy_from->_at_monitor_enter && (kind == copy_from->_kind || kind == CallerState))
+  , _in_monitor_enter_count(copy_from->_in_monitor_enter_count)
 {
   assert(kind != EmptyExceptionState || !Compilation::current()->env()->should_retain_local_variables(), "need locals");
   if (kind != EmptyExceptionState) {
     _locals.appendAll(&copy_from->_locals);
   }
 
-  if (kind != ExceptionState && kind != EmptyExceptionState) {
-    _stack.appendAll(&copy_from->_stack);
-  }
-
   if (copy_from->locks_size() > 0) {
     _locks->appendAll(copy_from->_locks);
   }
+
+  if (kind != ExceptionState && kind != EmptyExceptionState) {
+    _stack.appendAll(&copy_from->_stack);
+  } else if (copy_from->_at_monitor_enter) {
+#if 1
+    assert(copy_from->_kind != ExceptionState && copy_from->_kind != EmptyExceptionState, "");
+#endif
+    // exception state when monitorenter threw an exception
+    // pop the last lock
+    unlock();
+  }
+#if 1
+  // XXX FIXME
+  // For psuedo-bcis, try to set correct lock state?
+  // Before/After/Caller/Exception state vs
+  // locked/unlocked states:
+  //   BeforeBci/BeforeBciLocked,
+  //   AfterBci/AfterBciLocked, etc
+  // When creating CallerState, map
+  // at-monitor-enter unlocked --> locked, and
+  // at-monitor-exit  locked   --> unlocked
+  // because it means the operation was successful
+  // when we return to that caller.
+  // When adjusting lock count in handle_exception,
+  // adjust pseudo-bci as well?
+#endif
 
   verify();
 }
@@ -275,9 +308,9 @@ void ValueStack::verify() {
   if (kind() == Parsing) {
     assert(bci() == -99, "bci not defined during parsing");
   } else {
-    assert(bci() >= -1, "bci out of range");
+    assert(bci() >= MinBci, "bci out of range");
     assert(bci() < scope()->method()->code_size(), "bci out of range");
-    assert(bci() == SynchronizationEntryBCI || Bytecodes::is_defined(scope()->method()->java_code_at_bci(bci())), "make sure bci points at a real bytecode");
+    assert(bci() < 0 || Bytecodes::is_defined(scope()->method()->java_code_at_bci(bci())), "make sure bci points at a real bytecode");
     assert(scope()->method()->liveness_at_bci(bci()).is_valid(), "liveness at bci must be valid");
   }
 

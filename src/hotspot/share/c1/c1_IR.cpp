@@ -148,8 +148,8 @@ IRScope::IRScope(Compilation* compilation, IRScope* caller, int caller_bci, ciMe
   _wrote_volatile     = false;
   _start              = nullptr;
 
-  if (osr_bci != -1) {
-    // selective creation of phi functions is not possibel in osr-methods
+  if (osr_bci != InvocationEntryBci) {
+    // selective creation of phi functions is not possible in osr-methods
     _requires_phi_function.set_range(0, method->max_locals());
   }
 
@@ -173,7 +173,7 @@ int IRScope::max_stack() const {
 bool IRScopeDebugInfo::should_reexecute() {
   ciMethod* cur_method = scope()->method();
   int       cur_bci    = bci();
-  if (cur_method != nullptr && cur_bci != SynchronizationEntryBCI) {
+  if (cur_method != nullptr && cur_bci >= 0) {
     Bytecodes::Code code = cur_method->java_code_at_bci(cur_bci);
     return Interpreter::bytecode_should_reexecute(code);
   } else
@@ -916,11 +916,10 @@ void ComputeLinearScanOrder::compute_order(BlockBegin* start_block) {
 
   // the start block is always the first block in the linear scan order
   _linear_scan_order = new BlockList(_num_blocks);
-  append_block(start_block);
 
-  assert(start_block->end()->as_Base() != nullptr, "start block must end with Base-instruction");
-  BlockBegin* std_entry = ((Base*)start_block->end())->std_entry();
-  BlockBegin* osr_entry = ((Base*)start_block->end())->osr_entry();
+  assert(start_block->next()->as_Base() != nullptr, "start block must end with Start-instruction");
+  BlockBegin* std_entry = start_block->next()->as_Base()->std_entry();
+  BlockBegin* osr_entry = start_block->next()->as_Base()->osr_entry();
 
   BlockBegin* sux_of_osr_entry = nullptr;
   if (osr_entry != nullptr) {
@@ -936,15 +935,13 @@ void ComputeLinearScanOrder::compute_order(BlockBegin* start_block) {
     compute_dominator(osr_entry, start_block);
     _iterative_dominators = true;
   }
-  compute_dominator(std_entry, start_block);
-
   // start processing with standard entry block
   assert(_work_list.is_empty(), "list must be empty before processing");
 
-  if (ready_for_processing(std_entry)) {
-    sort_into_work_list(std_entry);
+  if (ready_for_processing(start_block)) {
+    sort_into_work_list(start_block);
   } else {
-    assert(false, "the std_entry must be ready for processing (otherwise, the method has no start block)");
+    assert(false, "the start block must be ready for processing");
   }
 
   do {
