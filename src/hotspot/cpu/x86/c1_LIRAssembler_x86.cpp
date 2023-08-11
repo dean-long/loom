@@ -452,8 +452,8 @@ int LIR_Assembler::emit_unwind_handler() {
   // Perform needed unlocking
   MonitorExitStub* stub = nullptr;
   if (method()->is_synchronized()) {
-    monitor_address(0, FrameMap::rax_opr);
-    stub = new MonitorExitStub(FrameMap::rax_opr, true, 0);
+    assert(!ObjectMonitorMode::java(), "use catchall exception handler");
+    stub = new MonitorExitStub(FrameMap::rsi_opr, LIR_OprFact::illegalOpr, FrameMap::rbx_opr, true, 0);
     if (LockingMode == LM_MONITOR) {
       __ jmp(*stub->entry());
     } else {

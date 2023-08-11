@@ -38,7 +38,16 @@ ValueStack::ValueStack(IRScope* scope, ValueStack* caller_state)
 , _locals(scope->method()->max_locals(), scope->method()->max_locals(), nullptr)
 , _stack(scope->method()->max_stack())
 , _locks(nullptr)
+, _at_monitor_enter(false)
+, _in_monitor_enter_count(0)
 {
+  if (caller_state != nullptr) {
+    _in_monitor_enter_count += caller_state->_in_monitor_enter_count + caller_state->_at_monitor_enter ? 1 : 0;
+    // In theory, there could be arbitrarily nested/recursive monitorenters in JOM code,
+    // because of synchronized code like fillInStackTrace() getting called
+    // in the Throwable ctor.
+    assert(_in_monitor_enter_count <= total_locks_size(), "");
+  }
   verify();
 }
 
@@ -50,18 +59,27 @@ ValueStack::ValueStack(ValueStack* copy_from, Kind kind, int bci)
   , _locals(copy_from->locals_size_for_copy(kind))
   , _stack(copy_from->stack_size_for_copy(kind))
   , _locks(copy_from->locks_size() == 0 ? nullptr : new Values(copy_from->locks_size()))
+  , _at_monitor_enter(copy_from->_at_monitor_enter && (kind == copy_from->_kind || kind == CallerState))
+  , _in_monitor_enter_count(copy_from->_in_monitor_enter_count)
 {
   assert(kind != EmptyExceptionState || !Compilation::current()->env()->should_retain_local_variables(), "need locals");
   if (kind != EmptyExceptionState) {
     _locals.appendAll(&copy_from->_locals);
   }
 
-  if (kind != ExceptionState && kind != EmptyExceptionState) {
-    _stack.appendAll(&copy_from->_stack);
-  }
-
   if (copy_from->locks_size() > 0) {
     _locks->appendAll(copy_from->_locks);
+  }
+
+  if (kind != ExceptionState && kind != EmptyExceptionState) {
+    _stack.appendAll(&copy_from->_stack);
+  } else if (copy_from->_at_monitor_enter) {
+#if 1
+    assert(copy_from->_kind != ExceptionState && copy_from->_kind != EmptyExceptionState, "");
+#endif
+    // exception state when monitorenter threw an exception
+    // pop the last lock
+    unlock();
   }
 
   verify();

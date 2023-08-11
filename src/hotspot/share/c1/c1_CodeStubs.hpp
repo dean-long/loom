@@ -373,18 +373,24 @@ class MonitorExitStub: public MonitorAccessStub {
  private:
   bool _compute_lock;
   int  _monitor_ix;
+  LIR_Opr _exc_reg;
 
  public:
-  MonitorExitStub(LIR_Opr lock_reg, bool compute_lock, int monitor_ix)
-    : MonitorAccessStub(LIR_OprFact::illegalOpr, lock_reg),
-      _compute_lock(compute_lock), _monitor_ix(monitor_ix) { }
+  MonitorExitStub(LIR_Opr obj_reg, LIR_Opr lock_reg, LIR_Opr exc_reg, bool compute_lock, int monitor_ix)
+    : MonitorAccessStub(obj_reg, lock_reg),
+      _compute_lock(compute_lock), _monitor_ix(monitor_ix), _exc_reg(exc_reg) { }
   virtual void emit_code(LIR_Assembler* e);
   virtual void visit(LIR_OpVisitState* visitor) {
-    assert(_obj_reg->is_illegal(), "unused");
+    if (!_obj_reg->is_illegal()) {
+      visitor->do_input(_obj_reg);
+    }
     if (_compute_lock) {
       visitor->do_temp(_lock_reg);
     } else {
       visitor->do_input(_lock_reg);
+    }
+    if (!_exc_reg->is_illegal()) {
+      visitor->do_input(_exc_reg);
     }
   }
 #ifndef PRODUCT

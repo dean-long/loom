@@ -4339,6 +4339,9 @@ void TemplateTable::athrow() {
 void TemplateTable::monitorenter() {
   if (ObjectMonitorMode::java()) {
 
+    __ pop_ptr(rax);
+    __ push_ptr(rax);
+
     // check for null object
     __ null_check(rax);
 
@@ -4437,8 +4440,12 @@ void TemplateTable::monitorenter() {
     ExternalAddress fetch_addr((address) Universe::object_monitorEnter_addr());
     __ movptr(method, fetch_addr);
 
+#if 1
+if (ProfileJOMCalls) {
     __ profile_call(rax);
     __ profile_arguments_type(rax, rbx, rbcp, false);
+}
+#endif
 
     __ jump_from_interpreted(method, rdx);
 
@@ -4545,6 +4552,8 @@ void TemplateTable::monitorenter() {
 void TemplateTable::monitorexit() {
 
   if (ObjectMonitorMode::java()) {
+    __ pop_ptr(rax);
+    __ push_ptr(rax);
 
     // check for null object
     __ null_check(rax);
@@ -4612,8 +4621,12 @@ void TemplateTable::monitorexit() {
     ExternalAddress fetch_addr((address) Universe::object_monitorExit_addr());
     __ movptr(method, fetch_addr);
 
+#if 1
+if (ProfileJOMCalls) {
     __ profile_call(rax);
     __ profile_arguments_type(rax, rbx, rbcp, false);
+}
+#endif
 
     __ jump_from_interpreted(rbx, rdx);
 

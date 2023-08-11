@@ -765,9 +765,14 @@ void InstructionPrinter::do_Throw(Throw* x) {
 
 void InstructionPrinter::do_Base(Base* x) {
   output()->print("std entry B%d", x->std_entry()->block_id());
-  if (x->number_of_sux() > 1) {
+  if (x->osr_entry() != nullptr) {
     output()->print(" osr entry B%d", x->osr_entry()->block_id());
   }
+}
+
+void InstructionPrinter::do_Start(Start* x) {
+  do_Goto(x);
+  output()->print(" (std entry)");
 }
 
 

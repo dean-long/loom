@@ -26,6 +26,7 @@
 package java.lang;
 
 import jdk.internal.misc.Blocker;
+import jdk.internal.vm.annotation.ForceInline;
 import jdk.internal.vm.annotation.IntrinsicCandidate;
 import jdk.internal.vm.annotation.ReservedStackAccess;
 
@@ -623,18 +624,6 @@ public class Object {
         }
     }
 
-    /* C2_PATCH
-    @ReservedStackAccess
-    private static final void compilerMonitorExit(Object o) {
-        monitorExit(o, 0x8L);
-    }
-
-    @ReservedStackAccess
-    private static final void compilerMonitorEnter(Object o) {
-        monitorEnter(o, 0x8L);
-    }
-    */
-
     /** Entry point for monitor exit from the VM (bytecode and ObjectLocker) */
     @ReservedStackAccess
     private static final void monitorExit(Object o) {
@@ -666,6 +655,42 @@ public class Object {
         }
         catch (Throwable t) {
             MonitorSupport.abortException("monitorExitAll", t);
+        }
+    }
+
+    @IntrinsicCandidate
+    private static final native void fillInLockRecord(int depth, Object lock, int lockStackPos);
+
+    /** Entry point for monitor entry from compiled code
+     */
+    @ForceInline
+    @ReservedStackAccess
+    private static final int compiledMonitorEnter(Object o, int depth) {
+        int pos = Thread.currentThread().lockStackPos;
+        fillInLockRecord(depth, o, pos);
+
+        // TODO: enter System Java mode
+        monitorEnter(o);
+        // TODO: exit System Java mode
+        return pos;
+    }
+
+    /** Entry point for monitor exit from compiled code
+     */
+    @ForceInline
+    @ReservedStackAccess
+    private static final void compiledMonitorExit(Object o, int depth, Throwable pending) throws Throwable {
+        // assert o == getLockRecordOop();
+        // assert Thread.currentThread().lockStackPos == getLockRecordPos();
+        // TODO: enter System Java mode
+        try {
+          monitorExit(o);
+        } catch (Throwable t) {
+            MonitorSupport.abortException("compiledMonitorExit", t);
+        }
+        // TODO: exit System Java mode
+        if (pending != null) {
+          throw pending;
         }
     }
 

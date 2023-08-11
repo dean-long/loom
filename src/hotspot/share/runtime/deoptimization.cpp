@@ -459,6 +459,27 @@ bool Deoptimization::deoptimize_objects_internal(JavaThread* thread, GrowableArr
 }
 #endif // COMPILER2_OR_JVMCI
 
+// Compute whether the root vframe returns a float or double value.
+BasicType root_return_type(JavaThread* current, vframeArray* array) {
+  int bci = array->element(0)->raw_bci();
+  if (bci < 0) {
+#ifdef ASSERT
+    if (array->is_within_bounds(1)) {
+      methodHandle callee(current, array->element(1)->method());
+      assert(callee() == Universe::object_compiledMonitorEnter_method() ||
+             callee() == Universe::object_compiledMonitorExit_method(), "");
+    }
+#endif
+    return T_ILLEGAL;
+  }
+#if 1
+// FIXME old code mapped -1 to 0, allowing false positive if invoke at bci 0?
+#endif
+  methodHandle method(current, array->element(0)->method());
+  Bytecode_invoke invoke = Bytecode_invoke_check(method, bci);
+  return invoke.is_valid() ? invoke.result_type() : T_ILLEGAL;
+}
+
 // This is factored, since it is both called from a JRT_LEAF (deoptimization) and a JRT_ENTRY (uncommon_trap)
 Deoptimization::UnrollBlock* Deoptimization::fetch_unroll_info_helper(JavaThread* current, int exec_mode) {
   // When we get here we are about to unwind the deoptee frame. In order to
@@ -480,7 +501,8 @@ Deoptimization::UnrollBlock* Deoptimization::fetch_unroll_info_helper(JavaThread
   RegisterMap map(current,
                   RegisterMap::UpdateMap::include,
                   RegisterMap::ProcessFrames::include,
-                  RegisterMap::WalkContinuation::skip);
+                  RegisterMap::WalkContinuation::skip,
+                  RegisterMap::Monitors::include);
   RegisterMap dummy_map(current,
                         RegisterMap::UpdateMap::skip,
                         RegisterMap::ProcessFrames::include,
@@ -679,12 +701,7 @@ Deoptimization::UnrollBlock* Deoptimization::fetch_unroll_info_helper(JavaThread
   }
 
   // Compute whether the root vframe returns a float or double value.
-  BasicType return_type;
-  {
-    methodHandle method(current, array->element(0)->method());
-    Bytecode_invoke invoke = Bytecode_invoke_check(method, array->element(0)->bci());
-    return_type = invoke.is_valid() ? invoke.result_type() : T_ILLEGAL;
-  }
+  BasicType return_type = root_return_type(current, array);
 
   // Compute information for handling adapters and adjusting the frame size of the caller.
   int caller_adjustment = 0;
@@ -1638,6 +1655,9 @@ bool Deoptimization::relock_objects(JavaThread* thread, GrowableArray<MonitorInf
             obj->set_mark(dmw);
           }
           if (mark.has_monitor()) {
+#if 1
+            assert(!ObjectMonitorMode::java(), "TODO");
+#endif
             // defer relocking if the deoptee thread is currently waiting for obj
             ObjectMonitor* waiting_monitor = deoptee_thread->current_waiting_monitor();
             if (waiting_monitor != nullptr && waiting_monitor->object() == obj()) {
@@ -1648,9 +1668,13 @@ bool Deoptimization::relock_objects(JavaThread* thread, GrowableArray<MonitorInf
             }
           }
         }
-        BasicLock* lock = mon_info->lock();
-        ObjectSynchronizer::enter(obj, lock, deoptee_thread);
-        assert(mon_info->owner()->is_locked(), "object must be locked now");
+        if (ObjectMonitorMode::java()) {
+          ObjectSynchronizer::java_enter(obj, nullptr, deoptee_thread);
+        } else {
+          BasicLock* lock = mon_info->lock();
+          ObjectSynchronizer::enter(obj, lock, deoptee_thread);
+          assert(mon_info->owner()->is_locked(), "object must be locked now");
+        }
       }
     }
   }

@@ -142,6 +142,23 @@ class ScopeDesc : public ResourceObj {
   void print_on(outputStream* st, PcDesc* pd) const;
   void print_value_on(outputStream* st) const;
 #endif
+
+  // JOM debug support
+ private:
+  bool _in_monitor_enter;
+  bool _in_monitor_exit;
+#ifdef ASSERT
+  bool _can_trust_lock_stack;
+#endif
+
+ public:
+  bool in_monitor_enter() const { return _in_monitor_enter; }
+  bool in_monitor_exit()  const { return _in_monitor_exit; }
+#ifdef ASSERT
+  bool can_trust_lock_stack()  const { return _can_trust_lock_stack; }
+#else
+  bool can_trust_lock_stack()  const { return false; }
+#endif
 };
 
 #endif // SHARE_CODE_SCOPEDESC_HPP

@@ -356,7 +356,7 @@ static bool print_code(outputStream* st, Thread* thread, address pc, bool is_cra
       InterpreterCodelet* codelet = Interpreter::codelet_containing(pc);
       if (codelet != nullptr) {
         if (add_if_absent((address) codelet, printed, printed_capacity)) {
-          codelet->print_on(st);
+          codelet->print_on(st, true);
           Disassembler::decode(codelet->code_begin(), codelet->code_end(), st);
           return true;
         }

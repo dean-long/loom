@@ -315,8 +315,8 @@ class IR: public CompilationResourceObj {
   int              number_of_locks() const       { return top_scope()->number_of_locks(); }
   ciMethod*        method() const                { return top_scope()->method(); }
   BlockBegin*      start() const                 { return top_scope()->start(); }
-  BlockBegin*      std_entry() const             { return start()->end()->as_Base()->std_entry(); }
-  BlockBegin*      osr_entry() const             { return start()->end()->as_Base()->osr_entry(); }
+  BlockBegin*      std_entry() const             { return start()->next()->as_Base()->std_entry(); }
+  BlockBegin*      osr_entry() const             { return start()->next()->as_Base()->osr_entry(); }
   BlockList*       code() const                  { return _code; }
   int              num_loops() const             { return _num_loops; }
   int              max_stack() const             { return top_scope()->max_stack(); } // expensive

@@ -256,7 +256,9 @@ address TemplateInterpreterGenerator::generate_return_entry_for(TosState state, 
   return entry;
 }
 
-address TemplateInterpreterGenerator::generate_return_entry_for_monitor(int step) {
+address TemplateInterpreterGenerator::generate_return_entry_for_monitor(
+  Bytecodes::Code code, bool from_compiled, bool skip_over, Bytecodes::Code next_bc)
+{
   assert(ObjectMonitorMode::java(), "must be");
   address entry = __ pc();
 
@@ -270,12 +272,34 @@ address TemplateInterpreterGenerator::generate_return_entry_for_monitor(int step
   __ restore_bcp();
   __ restore_locals();
 
-  __ pop(rax);
-
-  // clear system java
-  __ decrementl(Address(r15_thread, JavaThread::system_java_offset()), 1);
-
-  __ dispatch_next(vtos, step, false);
+  // This assumes monitorenter and exit both have the same args size.
+  // FIXME: pass in Method* or ars size.
+  //   __ lea(rsp, Address(rsp, -parm_size * Interpreter::stackElementScale()));
+  //
+  if (from_compiled) {
+    if (code == Bytecodes::_monitorenter) {
+      //  compiledMonitorEnter(int, Object)
+      __ pop_i();
+      __ pop_ptr();
+    } else {
+      assert(code == Bytecodes::_monitorexit, "unsupported bytecode");
+      //  compiledMonitorExit(int, Object, Object)
+      __ pop_i();
+      __ pop_ptr();
+      __ pop_ptr();
+    }
+  } else {
+    __ pop(rax);
+    // clear system java
+    __ decrementl(Address(r15_thread, JavaThread::system_java_offset()), 1);
+  }
+  if (next_bc == Bytecodes::_illegal) {
+    int step = skip_over ? Bytecodes::length_for(code) : 0;
+    __ dispatch_next(vtos, step);
+  } else {
+    __ movl(rbx, next_bc);
+    __ dispatch_only(vtos, false);
+  }
 
   return entry;
 }

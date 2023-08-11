@@ -421,12 +421,21 @@ CodeEmitInfo* LIRGenerator::state_for(Instruction* x, ValueStack* state, bool ig
     ciMethod* method = scope->method();
 
     MethodLivenessResult liveness = method->liveness_at_bci(bci);
-    if (bci == SynchronizationEntryBCI) {
+    if (bci == SynchronizationEntryBCI && state == s) {
       if (x->as_ExceptionObject() || x->as_Throw()) {
+#if 1
+// FIXME XXX only correct if no inlining, don't want to nuke
+// locals from JOM monitorexit
+// XXX TODO need inherited "system java" or "synthetic" state?
+#endif
+#if 0
         // all locals are dead on exit from the synthetic unlocker
         liveness.clear();
+#endif
       } else {
-        assert(x->as_MonitorEnter() || x->as_ProfileInvoke(), "only other cases are MonitorEnter and ProfileInvoke");
+        assert(x->as_MonitorEnter() || x->as_ProfileInvoke() ||
+              (ObjectMonitorMode::java() && x->as_Invoke()),
+              "only other cases are MonitorEnter and ProfileInvoke");
       }
     }
     if (!liveness.is_valid()) {
@@ -608,6 +617,7 @@ void LIRGenerator::logic_op (Bytecodes::Code code, LIR_Opr result_op, LIR_Opr le
 
 void LIRGenerator::monitor_enter(LIR_Opr object, LIR_Opr lock, LIR_Opr hdr, LIR_Opr scratch, int monitor_no, CodeEmitInfo* info_for_exception, CodeEmitInfo* info) {
   if (!GenerateSynchronizationCode) return;
+  assert(!ObjectMonitorMode::java(), "");
   // for slow path, use debug info for state after successful locking
   CodeStub* slow_path = new MonitorEnterStub(object, lock, info);
   __ load_stack_address_monitor(monitor_no, lock);
@@ -618,10 +628,13 @@ void LIRGenerator::monitor_enter(LIR_Opr object, LIR_Opr lock, LIR_Opr hdr, LIR_
 
 void LIRGenerator::monitor_exit(LIR_Opr object, LIR_Opr lock, LIR_Opr new_hdr, LIR_Opr scratch, int monitor_no) {
   if (!GenerateSynchronizationCode) return;
+#if 1
+  assert(!ObjectMonitorMode::java(), "");
+#endif
   // setup registers
   LIR_Opr hdr = lock;
   lock = new_hdr;
-  CodeStub* slow_path = new MonitorExitStub(lock, LockingMode != LM_MONITOR, monitor_no);
+  CodeStub* slow_path = new MonitorExitStub(object, lock, LIR_OprFact::illegalOpr, LockingMode != LM_MONITOR, monitor_no);
   __ load_stack_address_monitor(monitor_no, lock);
   __ unlock_object(hdr, object, lock, scratch, slow_path);
 }
@@ -2578,7 +2591,7 @@ ciKlass* LIRGenerator::profile_type(ciMethodData* md, int md_base_offset, int md
 }
 
 // profile parameters on entry to the root of the compilation
-void LIRGenerator::profile_parameters(Base* x) {
+void LIRGenerator::profile_parameters(ValueStack* state) {
   if (compilation()->profile_parameters()) {
     CallingConvention* args = compilation()->frame_map()->incoming_arguments();
     ciMethodData* md = scope()->method()->method_data_or_null();
@@ -2594,7 +2607,7 @@ void LIRGenerator::profile_parameters(Base* x) {
         BasicType t = src->type();
         if (is_reference_type(t)) {
           intptr_t profiled_k = parameters->type(j);
-          Local* local = x->state()->local_at(java_index)->as_Local();
+          Local* local = state->local_at(java_index)->as_Local();
           ciKlass* exact = profile_type(md, md->byte_offset_of_slot(parameters_type_data, ParametersTypeData::type_offset(0)),
                                         in_bytes(ParametersTypeData::type_offset(j)) - in_bytes(ParametersTypeData::type_offset(0)),
                                         profiled_k, local, mdp, false, local->declared_type()->as_klass(), nullptr);
@@ -2612,9 +2625,16 @@ void LIRGenerator::profile_parameters(Base* x) {
 
 void LIRGenerator::do_Base(Base* x) {
   __ std_entry(LIR_OprFact::illegalOpr);
+
   // Emit moves from physical registers / stack slots to virtual registers
   CallingConvention* args = compilation()->frame_map()->incoming_arguments();
   IRScope* irScope = compilation()->hir()->top_scope();
+
+  assert(scope() == irScope, "");
+  assert(x->block() == block(), "");
+  assert(x->block() == scope()->start(), "");
+  ValueStack* state = x->block()->state();
+
   int java_index = 0;
   for (int i = 0; i < args->length(); i++) {
     LIR_Opr src = args->at(i);
@@ -2638,7 +2658,7 @@ void LIRGenerator::do_Base(Base* x) {
     __ move(src, dest);
 
     // Assign new location to Local instruction for this local
-    Local* local = x->state()->local_at(java_index)->as_Local();
+    Local* local = state->local_at(java_index)->as_Local();
     assert(local != nullptr, "Locals for incoming arguments must have been created");
 #ifndef __SOFTFP__
     // The java calling convention passes double as long and float as int.
@@ -2649,51 +2669,17 @@ void LIRGenerator::do_Base(Base* x) {
     java_index += type2size[t];
   }
 
-  if (compilation()->env()->dtrace_method_probes()) {
-    BasicTypeList signature;
-    signature.append(LP64_ONLY(T_LONG) NOT_LP64(T_INT));    // thread
-    signature.append(T_METADATA); // Method*
-    LIR_OprList* args = new LIR_OprList();
-    args->append(getThreadPointer());
-    LIR_Opr meth = new_register(T_METADATA);
-    __ metadata2reg(method()->constant_encoding(), meth);
-    args->append(meth);
-    call_runtime(&signature, args, CAST_FROM_FN_PTR(address, SharedRuntime::dtrace_method_entry), voidType, nullptr);
-  }
-
-  if (method()->is_synchronized()) {
-    LIR_Opr obj;
-    if (method()->is_static()) {
-      obj = new_register(T_OBJECT);
-      __ oop2reg(method()->holder()->java_mirror()->constant_encoding(), obj);
-    } else {
-      Local* receiver = x->state()->local_at(0)->as_Local();
-      assert(receiver != nullptr, "must already exist");
-      obj = receiver->operand();
-    }
-    assert(obj->is_valid(), "must be valid");
-
-    if (method()->is_synchronized() && GenerateSynchronizationCode) {
-      LIR_Opr lock = syncLockOpr();
-      __ load_stack_address_monitor(0, lock);
-
-      CodeEmitInfo* info = new CodeEmitInfo(scope()->start()->state()->copy(ValueStack::StateBefore, SynchronizationEntryBCI), nullptr, x->check_flag(Instruction::DeoptimizeOnException));
-      CodeStub* slow_path = new MonitorEnterStub(obj, lock, info);
-
-      // receiver is guaranteed non-null so don't need CodeEmitInfo
-      __ lock_object(syncTempOpr(), obj, lock, new_register(T_OBJECT), slow_path, nullptr);
-    }
-  }
   // increment invocation counters if needed
   if (!method()->is_accessor()) { // Accessors do not have MDOs, so no counting.
-    profile_parameters(x);
-    CodeEmitInfo* info = new CodeEmitInfo(scope()->start()->state()->copy(ValueStack::StateBefore, SynchronizationEntryBCI), nullptr, false);
+    profile_parameters(state);
+    CodeEmitInfo* info = new CodeEmitInfo(state->copy(ValueStack::StateBefore, SynchronizationEntryBCI), nullptr, false);
     increment_invocation_counter(info);
   }
+}
 
-  // all blocks with a successor must end with an unconditional jump
-  // to the successor even if they are consecutive
-  __ jump(x->default_sux());
+
+void LIRGenerator::do_Start(Start* x) {
+  do_Goto(x);
 }
 
 
@@ -3023,6 +3009,10 @@ void LIRGenerator::do_Intrinsic(Intrinsic* x) {
 
   case vmIntrinsics::_blackhole:
     do_blackhole(x);
+    break;
+
+  case vmIntrinsics::_fillInLockRecord:
+    do_fillInLockRecord(x);
     break;
 
   default: ShouldNotReachHere(); break;
@@ -3430,6 +3420,30 @@ void LIRGenerator::do_blackhole(Intrinsic *x) {
     LIRItem vitem(x->argument_at(c), this);
     vitem.load_item();
     // ...and leave it unused.
+  }
+}
+
+void LIRGenerator::do_fillInLockRecord(Intrinsic *x) {
+  assert(!x->has_receiver(), "Should have been checked before: only static methods here");
+  if (ObjectMonitorMode::java() && JOMDebugC1BOL) {
+    // Write the oop and lock stack pos into the BasicObjectLock
+    IntConstant *ic = x->argument_at(0)->type()->as_IntConstant();
+    assert(ic != nullptr, "compiledMonitorEnter not inlined?");
+    int monitor_no = ic->value();
+
+    LIRItem object(x->argument_at(1), this);
+
+    LIRItem pos(x->argument_at(2), this);
+
+    LIR_Opr lock = new_register(T_ADDRESS);
+    __ load_stack_address_monitor(monitor_no, lock);
+
+    LIR_Address* oop_addr = new LIR_Address(lock, in_bytes(BasicObjectLock::obj_offset()), T_OBJECT);
+    object.load_item();
+    __ move_wide(object.result(), oop_addr);
+    LIR_Address* pos_addr = new LIR_Address(lock, in_bytes(BasicObjectLock::lock_offset()), T_ADDRESS);
+    pos.load_item();
+    __ move(pos.result(), pos_addr);
   }
 }
 

@@ -39,6 +39,10 @@
                  range,                                                     \
                  constraint)                                                \
                                                                             \
+  /* JOM debug */                                                           \
+  product(bool, JOMDebugC1BOL, true, DIAGNOSTIC,                            \
+          "Generate BasicObjectLock records on stack")                      \
+                                                                            \
   /* Printing */                                                            \
   notproduct(bool, PrintC1Statistics, false,                                \
           "Print Compiler1 statistics" )                                    \

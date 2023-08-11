@@ -2465,9 +2465,12 @@ OopMap* LinearScan::compute_oop_map(IntervalWalker* iw, LIR_Op* op, CodeEmitInfo
 
   // add oops from lock stack
   assert(info->stack() != nullptr, "CodeEmitInfo must always have a stack");
-  int locks_count = info->stack()->total_locks_size();
-  for (int i = 0; i < locks_count; i++) {
-    set_oop(map, frame_map()->monitor_object_regname(i));
+
+  if (!ObjectMonitorMode::java() || JOMDebugC1BOL) {
+    int locks_count = info->stack()->total_locks_size();
+    for (int i = 0; i < locks_count; i++) {
+      set_oop(map, frame_map()->monitor_object_regname(i));
+    }
   }
 
   return map;
@@ -2527,13 +2530,11 @@ void LinearScan::init_compute_debug_info() {
   _scope_value_cache = ScopeValueArray(cache_size, cache_size, nullptr);
 }
 
-MonitorValue* LinearScan::location_for_monitor_index(int monitor_index) {
-  Location loc;
-  if (!frame_map()->location_for_monitor_object(monitor_index, &loc)) {
-    bailout("too large frame");
+MonitorValue* LinearScan::location_for_monitor_index(ScopeValue* object_scope_value, int monitor_index) {
+  if (ObjectMonitorMode::java() && !JOMDebugC1BOL) {
+    return new MonitorValue(object_scope_value, Location());
   }
-  ScopeValue* object_scope_value = new LocationValue(loc);
-
+  Location loc;
   if (!frame_map()->location_for_monitor_lock(monitor_index, &loc)) {
     bailout("too large frame");
   }
@@ -2944,9 +2945,17 @@ IRScopeDebugInfo* LinearScan::compute_debug_info_for_scope(int op_id, IRScope* c
   if (nof_locks > 0) {
     int lock_offset = cur_state->caller_state() != nullptr ? cur_state->caller_state()->total_locks_size() : 0;
     monitors = new GrowableArray<MonitorValue*>(nof_locks);
+    GrowableArray<ScopeValue*>* monitor_objs = new GrowableArray<ScopeValue*>(nof_locks);
     for (int i = 0; i < nof_locks; i++) {
-      monitors->append(location_for_monitor_index(lock_offset + i));
+      Value obj = cur_state->lock_at(i);
+      append_scope_value(op_id, obj, monitor_objs);
+      ScopeValue* mon_obj = monitor_objs->at(i);
+      monitors->append(location_for_monitor_index(mon_obj, lock_offset + i));
+      assert(monitor_objs->length() == i + 1, "must match");
+      assert(monitors->length() == i + 1, "must match");
     }
+    assert(monitor_objs->length() == nof_locks, "wrong number of monitors");
+    assert(monitors->length() == nof_locks, "wrong number of monitors");
   }
 
   return new IRScopeDebugInfo(cur_scope, cur_state->bci(), locals, expressions, monitors, caller_debug_info);
@@ -6187,7 +6196,7 @@ void ControlFlowOptimizer::optimize(BlockList* code) {
   ControlFlowOptimizer optimizer = ControlFlowOptimizer();
 
   // push the OSR entry block to the end so that we're not jumping over it.
-  BlockBegin* osr_entry = code->at(0)->end()->as_Base()->osr_entry();
+  BlockBegin* osr_entry = code->at(0)->next()->as_Base()->osr_entry();
   if (osr_entry) {
     int index = osr_entry->linear_scan_number();
     assert(code->at(index) == osr_entry, "wrong index");

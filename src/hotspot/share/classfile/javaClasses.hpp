@@ -372,7 +372,7 @@ class java_lang_Thread : AllStatic {
   static int _park_blocker_offset;
   static int _scopedValueBindings_offset;
   JFR_ONLY(static int _jfr_epoch_offset;)
-  static int _frame_id_offset;
+  static int _lock_stack_offset;
   static int _lock_stack_pos_offset;
 
   static void compute_offsets();
@@ -446,8 +446,12 @@ class java_lang_Thread : AllStatic {
   JFR_ONLY(static void set_jfr_epoch(oop java_thread, u2 epoch);)
   JFR_ONLY(static int jfr_epoch_offset() { CHECK_INIT(_jfr_epoch_offset); })
 
+  // JOM
+  static int lock_stack_offset()     { CHECK_INIT(_lock_stack_offset); }
   static int lock_stack_pos_offset() { CHECK_INIT(_lock_stack_pos_offset); }
-  static int frame_id_offset()       { CHECK_INIT(_frame_id_offset); }
+
+  static objArrayOop lock_stack(oop java_thread);
+  static int lock_stack_pos(oop java_thread);
 
   // Debugging
   friend class JavaClasses;

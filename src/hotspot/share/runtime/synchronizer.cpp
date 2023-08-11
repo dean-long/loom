@@ -522,7 +522,7 @@ static bool useHeavyMonitors() {
 
 // Java-based monitor methods
 
-void ObjectSynchronizer::java_enter(Handle obj, JavaThread* current) {
+void ObjectSynchronizer::java_enter(Handle obj, BasicObjectLock* lock, JavaThread* current) {
   assert(ObjectMonitorMode::java(), "must be");
 
   SafepointMechanism::process_if_requested(current, true, false); // Clear any pending suspend
@@ -537,17 +537,51 @@ void ObjectSynchronizer::java_enter(Handle obj, JavaThread* current) {
   if (ObjectMonitorMode::native()) {
     current->inc_held_monitor_count(1);
   }
+#if 1
+  if (lock != nullptr) {
+    lock->set_obj(obj());
+    *(int *)lock->lock() = current->java_lock_stack_pos();
+  }
+#endif
 }
 
-void ObjectSynchronizer::java_exit(Handle obj, JavaThread* current) {
+void ObjectSynchronizer::java_exit(Handle obj, BasicObjectLock* lock, JavaThread* current) {
+  assert(ObjectMonitorMode::java(), "must be");
+
+  SafepointMechanism::process_if_requested(current, true, false); // Clear any pending suspend
+
+#if 1
+  if (lock != nullptr) {
+// FIXME: interpreter sets to null before calling exit?
+    assert(lock->obj() == obj(), "");
+    assert(*(int *)lock->lock() == current->java_lock_stack_pos(), "");
+  }
+#endif
+
+  JavaValue result(T_VOID);
+  JavaCallArguments args;
+  args.push_oop(obj);
+  methodHandle mh (current, Universe::object_monitorExit_method());
+  current->set_system_java();
+  JavaCalls::call(&result, mh, &args, current);
+  assert(!current->has_pending_exception(), "No IMSE should be possible");
+  current->clear_system_java();
+  if (ObjectMonitorMode::native()) {
+    current->dec_held_monitor_count(1);
+  }
+}
+
+void ObjectSynchronizer::compiled_java_exit(Handle obj, int monitor_index, Handle exc, JavaThread* current) {
   assert(ObjectMonitorMode::java(), "must be");
 
   SafepointMechanism::process_if_requested(current, true, false); // Clear any pending suspend
 
   JavaValue result(T_VOID);
   JavaCallArguments args;
+  args.push_oop(exc);
+  args.push_int(monitor_index);
   args.push_oop(obj);
-  methodHandle mh (current, Universe::object_monitorExit_method());
+  methodHandle mh (current, Universe::object_compiledMonitorExit_method());
   current->set_system_java();
   JavaCalls::call(&result, mh, &args, current);
   assert(!current->has_pending_exception(), "No IMSE should be possible");
@@ -861,7 +895,7 @@ ObjectLocker::ObjectLocker(Handle obj, JavaThread* current, bool do_lock) :
       // Weak only restores old exception if there is no exception.
       // Any exception from enter will thus be kept.
       WeakPreserveExceptionMark pem(_thread);
-      ObjectSynchronizer::java_enter(_obj, _thread);
+      ObjectSynchronizer::java_enter(_obj, nullptr, _thread);
     }
   }
 }
@@ -874,7 +908,7 @@ ObjectLocker::~ObjectLocker() {
       // Weak only restores old exception if there is no exception.
       // Any exception from exit will thus be kept.
       WeakPreserveExceptionMark pem(_thread);
-      ObjectSynchronizer::java_exit(_obj, _thread);
+      ObjectSynchronizer::java_exit(_obj, nullptr, _thread);
     }
   }
   _thread->set_no_async_exception(_old_nae);

@@ -503,7 +503,9 @@ GlobalValueNumbering::GlobalValueNumbering(IR* ir)
 
   BlockBegin* start_block = blocks->at(0);
   assert(start_block == ir->start() && start_block->number_of_preds() == 0 && start_block->dominator() == nullptr, "must be start block");
+#if 0
   assert(start_block->next()->as_Base() != nullptr && start_block->next()->next() == nullptr, "start block must not have instructions");
+#endif
 
   // method parameters are not linked in instructions list, so process them separately
   for_each_state_value(start_block->state(), value,

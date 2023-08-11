@@ -918,9 +918,9 @@ void ComputeLinearScanOrder::compute_order(BlockBegin* start_block) {
   _linear_scan_order = new BlockList(_num_blocks);
   append_block(start_block);
 
-  assert(start_block->end()->as_Base() != nullptr, "start block must end with Base-instruction");
-  BlockBegin* std_entry = ((Base*)start_block->end())->std_entry();
-  BlockBegin* osr_entry = ((Base*)start_block->end())->osr_entry();
+  assert(start_block->next()->as_Base() != nullptr, "start block must end with Start-instruction");
+  BlockBegin* std_entry = start_block->next()->as_Base()->std_entry();
+  BlockBegin* osr_entry = start_block->next()->as_Base()->osr_entry();
 
   BlockBegin* sux_of_osr_entry = nullptr;
   if (osr_entry != nullptr) {

@@ -48,7 +48,9 @@ enum MethodCompilation {
   UnwindBci            = -3,
   AfterExceptionBci    = -4,
   UnknownBci           = -5,
-  InvalidFrameStateBci = -6
+  InvalidFrameStateBci = -6,
+  PrologueLockBci      = -100,
+  EpilogueUnlockBci    = -200,
 };
 
 // Enumeration to distinguish tiers of compilation

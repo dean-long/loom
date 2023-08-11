@@ -153,7 +153,8 @@ class Runtime1: public AllStatic {
   static void throw_array_store_exception(JavaThread* current, oopDesc* object);
 
   static void monitorenter(JavaThread* current, oopDesc* obj, BasicObjectLock* lock);
-  static void monitorexit (JavaThread* current, BasicObjectLock* lock);
+  static void monitorexit (JavaThread* current, oopDesc* obj, BasicObjectLock* lock);
+  static void monitorexit_java(JavaThread* current, oopDesc* obj, int monitor_index, oopDesc* exc);
 
   static void deoptimize(JavaThread* current, jint trap_request);
 

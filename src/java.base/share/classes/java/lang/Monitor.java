@@ -25,6 +25,7 @@ import java.util.function.Function;
 import java.lang.ref.WeakReference;
 import jdk.internal.misc.Unsafe;
 import jdk.internal.ref.Cleaner;
+import jdk.internal.vm.annotation.DontInline;
 import jdk.internal.vm.annotation.IntrinsicCandidate;
 
 import static java.lang.MonitorSupport.abort;
@@ -979,20 +980,38 @@ import static java.lang.MonitorSupport.Fast.INFLATED;
         return m;
     }
 
+    @DontInline
     static void slowEnter(Thread current, Object o) {
         boolean isOwned = current.hasLocked(o);
         Monitor m = monitorFor(o, current, isOwned);
-        m.enter(current);
         current.push(m);
+        boolean success = false;
+        try {
+          m.enter(current);
+          success = true;
+        } finally {
+          if (!success) {
+            current.pop(m);
+          }
+        }
     }
 
     static void jniEnter(Thread current, Object o) {
         // Always inflate if needed
         Monitor m = monitorFor(o, current, current.hasLocked(o));
         current.addJNIMonitor(m);
-        m.enter(current);
+        boolean success = false;
+        try {
+          m.enter(current);
+          success = true;
+        } finally {
+          if (!success) {
+            current.removeJNIMonitor(m);
+          }
+        }
     }
 
+    @DontInline
     static void slowExit(Thread current, Object o) {
         if (!current.hasLocked(o))
             throw new IllegalMonitorStateException();

@@ -361,7 +361,7 @@ public:
 
   // Cache DTrace flags
   void  cache_dtrace_flags();
-  bool  dtrace_method_probes()   const { return _dtrace_method_probes; }
+  bool  dtrace_method_probes()   const { return _dtrace_method_probes || UseNewCode2; }
   bool  dtrace_alloc_probes()    const { return _dtrace_alloc_probes; }
 
   // The compiler task which has created this env.
@@ -514,6 +514,9 @@ public:
   void process_invokedynamic(const constantPoolHandle &cp, int index, JavaThread* thread);
   void process_invokehandle(const constantPoolHandle &cp, int index, JavaThread* thread);
   void find_dynamic_call_sites();
+
+  ciMethod* get_monitor_method(bool& will_link, ciSignature* *declared_signature_result, bool enter);
+  ciKlass* get_monitor_holder(bool enter);
 };
 
 #endif // SHARE_CI_CIENV_HPP

@@ -1314,17 +1314,26 @@ OopMapSet* Runtime1::generate_code_for(StubID id, StubAssembler* sasm) {
     case monitorexit_id:
       {
         StubFrame f(sasm, "monitorexit", dont_gc_arguments);
-        OopMap* map = save_live_registers(sasm, 2, save_fpu_registers);
+        OopMap* map = nullptr;
 
         // Called with store_parameter and not C abi
 
-        f.load_argument(0, rax); // rax,: lock address
-
-        // note: really a leaf routine but must setup last java sp
-        //       => use call_RT for now (speed can be improved by
-        //       doing last java sp setup manually)
-        int call_offset = __ call_RT(noreg, noreg, CAST_FROM_FN_PTR(address, monitorexit), rax);
-
+        int call_offset = -1;
+        if (ObjectMonitorMode::java()) {
+          map = save_live_registers(sasm, 3, save_fpu_registers);
+          f.load_argument(2, c_rarg1); // object
+          f.load_argument(1, c_rarg2); // monitor index
+          f.load_argument(0, c_rarg3); // exception
+          call_offset = __ call_RT(noreg, noreg, CAST_FROM_FN_PTR(address, monitorexit_java), 3);
+        } else {
+          map = save_live_registers(sasm, 2, save_fpu_registers);
+          f.load_argument(1, rax); // rax,: object
+          f.load_argument(0, rbx); // rbx,: lock address
+          // note: really a leaf routine but must setup last java sp
+          //       => use call_RT for now (speed can be improved by
+          //       doing last java sp setup manually)
+          int call_offset = __ call_RT(noreg, noreg, CAST_FROM_FN_PTR(address, monitorexit), rax, rbx);
+        }
         oop_maps = new OopMapSet();
         oop_maps->add_gc_map(call_offset, map);
         restore_live_registers(sasm, save_fpu_registers);
