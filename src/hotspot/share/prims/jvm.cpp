@@ -775,7 +775,9 @@ JVM_ENTRY(void, JVM_Monitor_log(JNIEnv* env, jclass ignored, jstring msg))
   Handle msg_h(thread, JNIHandles::resolve_non_null(msg));
   char* str = java_lang_String::as_utf8_string(msg_h());
   log_debug(monitor)("Monitor log: %s by %s (%p)", str, thread->name(), thread);
-//tty->print_cr("Monitor log: %s by %s (%p)", str, thread->name(), thread);
+#if 1
+  tty->print_cr("Monitor log: %s by %s (%p)", str, thread->name(), thread);
+#endif
 JVM_END
 
 JVM_ENTRY(void, JVM_Monitor_log_enter(JNIEnv* env, jclass ignored, jobject obj, jlong fid))

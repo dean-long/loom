@@ -2318,7 +2318,7 @@ class BacktraceBuilder: public StackObj {
     // Smear the -1 bci to 0 since the array only holds unsigned
     // shorts.  The later line number lookup would just smear the -1
     // to a 0 even if it could be recorded.
-    if (bci == SynchronizationEntryBCI) bci = 0;
+    if (bci < 0) bci = 0;
 
     if (_index >= trace_chunk_size) {
       methodHandle mhandle(THREAD, method);

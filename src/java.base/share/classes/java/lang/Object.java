@@ -693,10 +693,9 @@ public class Object {
     // @TransactionEntry @TransactionFrame method(TransactionState state)
     /** Entry point for monitor exit from compiled code
      */
+    @ForceInline
     @ReservedStackAccess
     private static final void compiledMonitorExit(Object o, int depth) {
-        // assert o == getLockRecordOop();
-        // assert Thread.currentThread().lockStackPos == getLockRecordPos();
         try {
           monitorExit(o);
         } catch (Throwable t) {
@@ -708,10 +707,42 @@ public class Object {
      */
     // @SystemEntry @RetainArguments
     // @TransactionEntry @TransactionFrame method(TransactionState state)
+    @ForceInline
     @ReservedStackAccess
     private static final Throwable compiledMonitorExitUnwind(Object o, int depth, Throwable pending) throws Throwable {
+        MonitorSupport.log("compiledMonitorExitUnwind obj "+o+" : "+pending);
         compiledMonitorExit(o, depth);
         return pending;
+    }
+
+    // @CompilerMacro
+    // @SignaturePolymorphic?
+    // @IntrinsicCandidate
+    private static final Object compiledReturnObject(Object o, int depth, Object value) throws Throwable {
+        compiledMonitorExit(o, depth);
+        return value;
+    }
+    private static final int compiledReturnInt(Object o, int depth, int value) throws Throwable {
+        compiledMonitorExit(o, depth);
+        return value;
+    }
+    private static final long compiledReturnLong(Object o, int depth, long value) throws Throwable {
+        compiledMonitorExit(o, depth);
+        return value;
+    }
+    private static final float compiledReturnFloat(Object o, int depth, float value) throws Throwable {
+        compiledMonitorExit(o, depth);
+        return value;
+    }
+    private static final double compiledReturnDouble(Object o, int depth, double value) throws Throwable {
+        compiledMonitorExit(o, depth);
+        return value;
+    }
+
+    // @CompilerMacro
+    private static final Throwable compiledUnwind(Object o, int depth, Throwable pending) throws Throwable {
+        compiledMonitorExit(o, depth);
+        throw pending;
     }
 
     /** Entry point for uninterruptible monitor wait from the VM

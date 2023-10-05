@@ -771,8 +771,7 @@ void InstructionPrinter::do_Base(Base* x) {
 }
 
 void InstructionPrinter::do_Start(Start* x) {
-  do_Goto(x);
-  output()->print(" (std entry)");
+  output()->print("goto B%d (std entry)", x->default_sux()->block_id());
 }
 
 

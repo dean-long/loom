@@ -2493,7 +2493,8 @@ public class Thread implements Runnable {
             MonitorSupport.abort("pop() ArrayIndexOutOfBoundsException: " + lockStackPos);
         Object o = lockStack[--lockStackPos];
         if (o != lockee) {
-            MonitorSupport.abort("mismatched lockStack: expected " + lockee + " but found " + o);
+            MonitorSupport.abort("mismatched lockStack[" + lockStackPos + "]: " +
+                                 "expected " + lockee + " but found " + o);
         }
         lockStack[lockStackPos] = null;
     }

@@ -132,6 +132,7 @@ class TemplateInterpreter: public AbstractInterpreter {
   static address _compiled_monitor_enter_entry;
   static address _compiled_monitor_exit_entry;
   static address _compiled_prologue_monitor_enter_entry;
+  static address _compiled_epilogue_monitor_exit_throw_entry;
   static EntryPoint _compiled_epilogue_monitor_exit_entry;
 
   static DispatchTable _active_table;                           // the active    dispatch table (used by the interpreter for dispatch)
@@ -179,6 +180,9 @@ class TemplateInterpreter: public AbstractInterpreter {
   static address    compiled_monitor_enter_entry()              { return _compiled_monitor_enter_entry; }
   static address    compiled_monitor_exit_entry()               { return _compiled_monitor_exit_entry; }
   static address    compiled_prologue_monitor_enter_entry()     { return _compiled_prologue_monitor_enter_entry; }
+  static address    compiled_epilogue_monitor_exit_throw_entry() {
+    return _compiled_epilogue_monitor_exit_throw_entry;
+  }
   static address    compiled_epilogue_monitor_exit_entry(TosState state) {
     return _compiled_epilogue_monitor_exit_entry.entry(state);
   }

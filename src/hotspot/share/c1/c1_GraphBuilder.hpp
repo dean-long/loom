@@ -270,7 +270,7 @@ class GraphBuilder {
   void call_register_finalizer();
   void access_field(Bytecodes::Code code);
   bool invoke(ciMethod* target, ciKlass* holder, ciSignature* declared_signature,
-              bool will_link, Bytecodes::Code code, Bytecodes::Code bc_raw, int bci,
+              bool will_link, Bytecodes::Code code, Bytecodes::Code bc_raw,
               BlockBegin* continuation = nullptr);
   bool invoke(Bytecodes::Code code);
   void new_instance(int klass_index);
@@ -400,7 +400,7 @@ class GraphBuilder {
   void print_inlining(ciMethod* callee, const char* msg, bool success = true);
 
   void profile_call(ciMethod* callee, Value recv, ciKlass* predicted_holder, Values* obj_args, bool inlined);
-  void profile_return_type(Value ret, ciMethod* callee, ciMethod* m = nullptr, int bci = -1);
+  void profile_return_type(Value ret, ciMethod* callee, ciMethod* m, int bci);
   void profile_invocation(ciMethod* inlinee, ValueStack* state);
 
   // Shortcuts to profiling control.

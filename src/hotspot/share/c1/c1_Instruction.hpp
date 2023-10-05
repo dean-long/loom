@@ -2107,10 +2107,14 @@ LEAF(Throw, BlockEnd)
 };
 
 
-LEAF(Start, Goto)
+LEAF(Start, BlockEnd)
+ private:
+  BlockBegin* _osr_entry;
+
  public:
   // creation
-  Start(BlockBegin* std_entry) : Goto(std_entry, false) {
+
+  Start(BlockBegin* std_entry) : BlockEnd(illegalType, nullptr, false), _osr_entry(nullptr) {
     assert(std_entry->is_set(BlockBegin::std_entry_flag), "std entry must be flagged");
     BlockList* s = new BlockList(2);
     s->append(std_entry);
@@ -2125,6 +2129,10 @@ LEAF(Start, Goto)
     assert(number_of_sux() == 1, "osr_entry already set");
     sux()->insert_before(0, entry);
     assert(this->osr_entry() == entry, "");
+#if 1
+    // FIXME: extra sux should be in start_block, 
+    // not last prologue block?
+#endif
     entry->add_predecessor(block());
   }
 };

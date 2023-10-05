@@ -475,11 +475,13 @@ final class MonitorSupport {
         }
     }
 
+    @DontInline
     final static void abort(String error, Object obj) {
         new Exception(error + " (obj "+obj+")").printStackTrace();
         abort0(error, obj);
     }
 
+    @DontInline
     final static void abort(String error) {
         abort(error, null);
     }

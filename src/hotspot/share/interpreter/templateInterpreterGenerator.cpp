@@ -140,6 +140,9 @@ void TemplateInterpreterGenerator::generate_all() {
     Interpreter::_compiled_prologue_monitor_enter_entry =
       generate_return_entry_for_monitor(Bytecodes::_monitorenter, true, false);
 
+    Interpreter::_compiled_epilogue_monitor_exit_throw_entry =
+        generate_return_entry_for_monitor(Bytecodes::_monitorexit, true, false, Bytecodes::_athrow);
+
     Interpreter::_compiled_epilogue_monitor_exit_entry =
       EntryPoint(
         generate_return_entry_for_monitor(Bytecodes::_monitorexit, true, false, Bytecodes::_areturn),

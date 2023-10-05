@@ -897,6 +897,10 @@ void InterpreterMacroAssembler::dispatch_only(TosState state, bool generate_poll
   dispatch_base(state, Interpreter::dispatch_table(state), true, generate_poll);
 }
 
+void InterpreterMacroAssembler::dispatch_only_via(TosState state, address* table, bool verifyoop, bool generate_poll) {
+  dispatch_base(state, table, verifyoop, generate_poll);
+}
+
 void InterpreterMacroAssembler::dispatch_only_normal(TosState state) {
   dispatch_base(state, Interpreter::normal_table(state));
 }
@@ -906,12 +910,16 @@ void InterpreterMacroAssembler::dispatch_only_noverify(TosState state) {
 }
 
 
-void InterpreterMacroAssembler::dispatch_next(TosState state, int step, bool generate_poll) {
+void InterpreterMacroAssembler::dispatch_next_via(TosState state, address* table, int step, bool generate_poll) {
   // load next bytecode (load before advancing _bcp_register to prevent AGI)
   load_unsigned_byte(rbx, Address(_bcp_register, step));
   // advance _bcp_register
   increment(_bcp_register, step);
-  dispatch_base(state, Interpreter::dispatch_table(state), true, generate_poll);
+  dispatch_base(state, table, true, generate_poll);
+}
+
+void InterpreterMacroAssembler::dispatch_next(TosState state, int step, bool generate_poll) {
+  dispatch_next_via(state, Interpreter::dispatch_table(state), step, generate_poll);
 }
 
 void InterpreterMacroAssembler::dispatch_via(TosState state, address* table) {

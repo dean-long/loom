@@ -2684,7 +2684,8 @@ void LIRGenerator::do_Base(Base* x) {
 
 
 void LIRGenerator::do_Start(Start* x) {
-  do_Goto(x);
+  move_to_phi(x->state());
+  __ jump(x->default_sux());
 }
 
 

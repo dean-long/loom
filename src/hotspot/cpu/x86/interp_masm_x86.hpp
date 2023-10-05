@@ -203,8 +203,13 @@ class InterpreterMacroAssembler: public MacroAssembler {
   void dispatch_only_noverify(TosState state);
   // load rbx from [_bcp_register + step] and dispatch via rbx
   void dispatch_next(TosState state, int step = 0, bool generate_poll = false);
+  // load rbx from [_bcp_register + step] and dispatch via rbx and table
+  void dispatch_next_via(TosState state, address* table, int step, bool generate_poll);
+
   // load rbx from [_bcp_register] and dispatch via rbx and table
   void dispatch_via (TosState state, address* table);
+  // dispatch via rbx and table
+  void dispatch_only_via(TosState state, address* table, bool verifyoop = false, bool generate_poll = false);
 
   // jump to an invoked target
   void prepare_to_jump_from_interpreted();

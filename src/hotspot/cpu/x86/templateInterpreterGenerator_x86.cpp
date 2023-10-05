@@ -278,15 +278,23 @@ address TemplateInterpreterGenerator::generate_return_entry_for_monitor(
   //
   if (from_compiled) {
     if (code == Bytecodes::_monitorenter) {
-      //  compiledMonitorEnter(int, Object)
+      //  compiledMonitorEnter(Object, int)
       __ pop_i();
       __ pop_ptr();
     } else {
       assert(code == Bytecodes::_monitorexit, "unsupported bytecode");
-      //  compiledMonitorExit(int, Object, Object)
-      __ pop_i();
-      __ pop_ptr();
-      __ pop_ptr();
+      if (next_bc == Bytecodes::_athrow) {
+        // compiledMonitorExitWithException(Object, int, Object exception)
+  __ warn("XXX monitorexit with exception");
+	__ pop_ptr(rbx);
+	__ pop_i();
+	__ pop_ptr();
+	__ push_ptr(rbx);
+      } else {
+        //  compiledMonitorExit(Object, int)
+	__ pop_i();
+	__ pop_ptr();
+      }
     }
   } else {
     __ pop(rax);
@@ -298,7 +306,11 @@ address TemplateInterpreterGenerator::generate_return_entry_for_monitor(
     __ dispatch_next(vtos, step);
   } else {
     __ movl(rbx, next_bc);
+#if 0
     __ dispatch_only(vtos, false);
+#else
+    __ dispatch_only_via(vtos, Interpreter::safept_table(vtos), true, true);
+#endif
   }
 
   return entry;
@@ -364,7 +376,11 @@ address TemplateInterpreterGenerator::generate_deopt_entry_for(TosState state, i
     __ bind(L);
   }
   if (continuation == nullptr) {
+#if 0
     __ dispatch_next(state, step);
+#else
+    __ dispatch_next_via(state, Interpreter::safept_table(state), step, true);
+#endif
   } else {
     __ jump_to_entry(continuation);
   }

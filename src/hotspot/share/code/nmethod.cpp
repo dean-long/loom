@@ -3208,6 +3208,8 @@ void nmethod::print_code_comment_on(outputStream* st, int column, address begin,
       st->print(";* unknown");
     } else if (sd->bci() == InvalidFrameStateBci) {
       st->print(";* invalid frame state");
+    } else if (sd->bci() < 0) {
+      st->print(";* unknown pseudo-bci %d", sd->bci());
     } else {
       if (sd->method() == nullptr) {
         st->print("method is nullptr");

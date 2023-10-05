@@ -231,33 +231,16 @@ void vframeArrayElement::unpack_on_stack(int caller_actual_parameters,
   int bci = raw_bci();
   if (bci < 0) {
     assert(!should_reexecute(), "should reexecute bci %d?", raw_bci());
-/*
-  SynchronizationEntryBci      = -30,
-  BeforeBci                    = -2,
-  BeforeBciLocked              = -3,
-  AfterBci                     = -4,
-  AfterBciLocked               = -5,
-  UnwindBci                    = -6,
-  AfterExceptionBci            = -7,
-  UnknownBci                   = -8,
-  PrologueInvocationCounterBci = -9,
-  InvalidFrameStateBci         = -31,
-  MinBci                       = -31,      // minimum value allowed by debugInfo
-  PrologueLockBci              = -100,
-  EpilogueUnlockBci            = -200,
-  InvocationEntryBci           = -999,     // i.e., not a on-stack replacement compilation
-*/
     switch (bci) {
-#if 0
-    case AfterBci:
-    case AfterExceptionBci:
-#endif
-    case EpilogueUnlockBci: {
+    case UnwindBci:
+    case AfterBciLockedInlined:
+    case AfterBciLocked: {
       // monitorexit
       // return value is on the stack
 #if 1
       // FIXME
-      // This may not be GC-safe, because an oop would not be in the oopmap.
+      // This may not be GC-safe, because an oop return value would not be
+      // in the oopmap.
       // Also, GenerateOopMap::do_monitor_enter() has hard-coded signature
       // that doesn't match what C1 uses.
       // Need to check how signature-polymorphic calls work...
@@ -267,35 +250,41 @@ void vframeArrayElement::unpack_on_stack(int caller_actual_parameters,
       // return monitorexit(obj, return_value, exception);
 
       // NOTE
-      // If unwinding with exception, need to pass exception to compiledMonitorExitWithException, or
+      // If unwinding with exception, need to pass exception to compiledMonitorExitUnwind, or
       // use exception unwind pc and primary/secondary continuation, which would require
       // exception on stack probably.
+
+      // Might be able to avoid safepoints if we use dispatch continuations and not injected
+      // bytecodes into default dispatch table.  Or use injected bytecodes w/ non-safepoint
+      // dispatch table.  But that only works if we are at the leaf.  We can't prevent callee
+      // from safepointing.
+      // Is VerifyStack enough to check GC-safety?
 #endif
-      BasicType bt;
-      int compiledMethodExit_args = 3;
-// int caller_actual_parameters
-// int callee_parameters
-      if (method()->result_type() == T_VOID) {
-        bt = T_VOID;
-        assert(expressions()->size() == compiledMethodExit_args, "compiledMethodExit has 3 arguments");
-      } else {
-        assert(expressions()->size() == compiledMethodExit_args+1, "no return value");
-        bt = expressions()->at(compiledMethodExit_args)->type();
-      }
       raw_bc = Bytecodes::_monitorexit;
       bcp = method()->bcp_from(0); // not right, but no better choice
-      pc  = Interpreter::compiled_epilogue_monitor_exit_entry(as_TosState(bt));
+      if (bci == UnwindBci) {
+        assert(callee_parameters == 3, "");
+        pc = Interpreter::compiled_epilogue_monitor_exit_throw_entry();
+      } else {
+	BasicType bt;
+	assert(callee_parameters == 2, "");
+	if (method()->result_type() == T_VOID) {
+	  bt = T_VOID;
+	  assert(expressions()->size() == 0, "");
+	} else {
+	  assert(expressions()->size() == 1, "no return value");
+	  bt = expressions()->at(0)->type();
+	}
+	pc = Interpreter::compiled_epilogue_monitor_exit_entry(as_TosState(bt));
+      }
       break;
     }
-    case PrologueLockBci:
+    case BeforeBci:
       // monitorenter
       bcp = method()->bcp_from(0); // bcp is next instruction when entry uses step 0
       raw_bc = Bytecodes::_monitorenter;
       pc  = Interpreter::compiled_prologue_monitor_enter_entry();
       break;
-#if 0
-    case SynchronizationEntryBCI:
-#endif
     case PrologueInvocationCounterBci:
       assert(is_top_frame, "pseudo-bci making call?");
       // We are deoptimizing while hanging in prologue code for synchronized method
@@ -426,7 +415,12 @@ void vframeArrayElement::unpack_on_stack(int caller_actual_parameters,
 
   _frame.patch_pc(thread, pc);
 
-  assert (!method()->is_synchronized() || locks > 0 || _removed_monitors || raw_bci() == SynchronizationEntryBCI, "synchronized methods must have monitors");
+  assert (!method()->is_synchronized() || locks > 0 || _removed_monitors
+#if 0
+|| raw_bci() == BeforeBci
+#endif
+|| raw_bci() == PrologueInvocationCounterBci
+          , "synchronized methods must have monitors");
 
   BasicObjectLock* top = iframe()->interpreter_frame_monitor_begin();
   for (int index = 0; index < locks; index++) {
@@ -684,7 +678,8 @@ void vframeArray::fill_in(JavaThread* thread,
 
 static bool invoke_has_member_arg(methodHandle caller, int bci, methodHandle callee) {
   if (callee() == Universe::compiledMonitorEnter() ||
-      callee() == Universe::compiledMonitorExit())
+      callee() == Universe::compiledMonitorExit() ||
+      callee() == Universe::compiledMonitorExitWithException())
   {
     // TODO: make Bytecode_invoke work for monitorenter/exit?
     return false;
@@ -757,12 +752,16 @@ void vframeArray::unpack_to_stack(frame &unpack_frame, int exec_mode, int caller
       const char* code_name;
       if (bci == SynchronizationEntryBCI) {
         code_name = "sync entry";
+      } else if (bci == PrologueInvocationCounterBci) {
+        code_name = "prologue invocation counter";
       } else if (bci == UnwindBci || bci == AfterExceptionBci) {
-        code_name = "exception unwind";
-      } else if (bci == PrologueLockBci) {
-        code_name = "prologue monitorenter";
-      } else if (bci == EpilogueUnlockBci) {
-        code_name = "epilogue monitorexit";
+        code_name = "exception unwind (sync entry)";
+      } else if (bci == BeforeBci || BeforeBciLocked) {
+        code_name = "prologue monitorenter (sync entry)";
+      } else if (bci == AfterBciLocked || AfterBci || AfterBciLockedInlined) {
+        code_name = "epilogue monitorexit (sync entry)";
+      } else if (bci < 0) {
+        code_name = "unknown psuedo-bci";
       } else {
         Bytecodes::Code code = elem->method()->code_at(bci);
         code_name = Bytecodes::name(code);

@@ -463,14 +463,6 @@ bool Deoptimization::deoptimize_objects_internal(JavaThread* thread, GrowableArr
 BasicType root_return_type(JavaThread* current, vframeArray* array) {
   int bci = array->element(0)->raw_bci();
   if (bci < 0) {
-#ifdef ASSERT
-    if (array->is_within_bounds(1)) {
-      methodHandle callee(current, array->element(1)->method());
-      assert(callee() == Universe::compiledMonitorEnter() ||
-             callee() == Universe::compiledMonitorExit() ||
-             callee() == Universe::compiledMonitorExitWithException(), "");
-    }
-#endif
     return T_ILLEGAL;
   }
 #if 1

@@ -1144,6 +1144,10 @@ JRT_ENTRY(void, InterpreterRuntime::at_safepoint(JavaThread* current))
   // JRT_END does an implicit safepoint check, hence we are guaranteed to block
   // if this is called during a safepoint
 
+#if 1
+    Universe::heap()->collect(GCCause::_java_lang_system_gc);
+    Universe::heap()->collect(GCCause::_java_lang_system_gc);
+#endif
   if (!current->system_java() && JvmtiExport::should_post_single_step()) {
     // This function is called by the interpreter when single stepping. Such single
     // stepping could unwind a frame. Then, it is important that we process any frames

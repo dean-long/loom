@@ -47,14 +47,14 @@ enum MethodCompilation {
   BeforeBciLocked              = -3,
   AfterBci                     = -4,
   AfterBciLocked               = -5,
-  UnwindBci                    = -6,
-  AfterExceptionBci            = -7,
-  UnknownBci                   = -8,
-  PrologueInvocationCounterBci = -9,
+  AfterBciLockedInlined        = -6,
+  AfterBciInlined              = -7,
+  UnwindBci                    = -8,
+  AfterExceptionBci            = -9,
+  UnknownBci                   = -10,
+  PrologueInvocationCounterBci = -11,
   InvalidFrameStateBci         = -31,
   MinBci                       = -31,      // minimum value allowed by debugInfo
-  PrologueLockBci              = -100,
-  EpilogueUnlockBci            = -200,
   InvocationEntryBci           = -999,     // i.e., not a on-stack replacement compilation
 };
 

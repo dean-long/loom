@@ -1633,7 +1633,8 @@ void GraphBuilder::method_return(Value x, bool ignore_return) {
 
     int invoke_bci = state()->caller_state()->bci();
 
-    if (x != nullptr  && !ignore_return) {
+    // Check for invokehandle/invokedynamic
+    if (x != nullptr  && !ignore_return && invoke_bci >= 0) {
       ciMethod* caller = state()->scope()->caller()->method();
       Bytecodes::Code invoke_raw_bc = caller->raw_code_at_bci(invoke_bci);
       if (invoke_raw_bc == Bytecodes::_invokehandle || invoke_raw_bc == Bytecodes::_invokedynamic) {
@@ -1664,9 +1665,9 @@ void GraphBuilder::method_return(Value x, bool ignore_return) {
 #if 0
       int bci = SynchronizationEntryBCI;
 #else
-      int bci = -10;
+      int bci = AfterBciLockedInlined;
 #endif
-      if (ObjectMonitorMode::java()) {
+      if (x != nullptr && ObjectMonitorMode::java()) {
         state()->push(x->type(), x);
       }
       assert(state()->locks_size() == 1, "receiver must be locked here");
@@ -1674,11 +1675,14 @@ void GraphBuilder::method_return(Value x, bool ignore_return) {
         append_with_bci(new Constant(new InstanceConstant(method()->holder()->java_mirror())), bci) :
         sync_receiver();
 #if 1
-      assert(receiver->is_equal(state()->lock_at(0)), "");
-assert(receiver->block() == block(), "");
-      assert(receiver->is_linked(), "");
+assert(!receiver->can_be_linked() || receiver->block() == block(), "");
+#endif
+#if 1
+assert(!receiver->can_be_linked() || receiver->is_linked(), "");
+assert(receiver == state()->lock_at(0) || receiver->is_equal(state()->lock_at(0)), "");
 #endif
       monitorexit(receiver, bci);
+      // bci = AfterBciInlined;
     }
 
     if (need_mem_bar) {
@@ -1688,15 +1692,12 @@ assert(receiver->block() == block(), "");
     // State at end of inlined method is the state of the caller
     // without the method parameters on stack, including the
     // return value, if any, of the inlined method on operand stack.
-#if 1
-// XXX state doesn't match scope, _block, etc until we pop?
-#endif
     set_state(state()->caller_state()->copy_for_parsing());
     if (x != nullptr) {
       if (!ignore_return) {
         state()->push(x->type(), x);
       }
-      if (profile_return() && x->type()->is_object_kind()) {
+      if (profile_return() && x->type()->is_object_kind() && invoke_bci >= 0) {
         ciMethod* caller = state()->scope()->method();
         profile_return_type(x, method(), caller, invoke_bci);
       }
@@ -1721,24 +1722,23 @@ assert(receiver->block() == block(), "");
     // perform the unlocking before exiting the method
     assert(state()->locks_size() == 1, "receiver must be locked here");
 
-    if (ObjectMonitorMode::java()) {
+    if (x != nullptr && ObjectMonitorMode::java()) {
       state()->push(x->type(), x);
     }
     Value receiver = method()->is_static() ?
       append(new Constant(new InstanceConstant(method()->holder()->java_mirror()))) :
       sync_receiver();
 #if 1
-      assert(receiver->is_equal(state()->lock_at(0)), "");
-assert(receiver->block() == block(), "");
-      assert(receiver->is_linked(), "");
+assert(!receiver->can_be_linked() || receiver->block() == block(), "");
+#endif
+#if 1
+assert(receiver == state()->lock_at(0) || receiver->is_equal(state()->lock_at(0)), "");
+assert(!receiver->can_be_linked() || receiver->is_linked(), "");
 #endif
     // Might be better to jump to common code rather than inline at every return
-#if 0
-    int bci = SynchronizationEntryBCI;
-#else
-    int bci = -20;
-#endif
+    int bci = AfterBciLocked;
     monitorexit(receiver, bci);
+    // bci = AfterBci;
   }
   state()->truncate_stack(0);
 
@@ -1995,7 +1995,6 @@ bool GraphBuilder::invoke(ciMethod* target, ciKlass* holder,
                           bool will_link,
                           Bytecodes::Code code,
                           Bytecodes::Code bc_raw,
-                          int bci,
                           BlockBegin* cont)
 {
   assert(declared_signature != nullptr, "cannot be null");
@@ -2057,7 +2056,7 @@ bool GraphBuilder::invoke(ciMethod* target, ciKlass* holder,
       CheckCast* c = new CheckCast(receiver_constraint, receiver, copy_state_before());
       // go to uncommon_trap when checkcast fails
       c->set_invokespecial_receiver_check();
-      state()->stack_at_put(index, append_with_bci(c, bci));
+      state()->stack_at_put(index, append_split(c));
     }
   }
 
@@ -2163,7 +2162,7 @@ bool GraphBuilder::invoke(ciMethod* target, ciKlass* holder,
             c->set_direct_compare(constraint->is_final());
             // pass the result of the checkcast so that the compiler has
             // more accurate type info in the inlinee
-            better_receiver = append_with_bci(c, bci);
+            better_receiver = append_split(c);
 
             dependency_recorder()->assert_unique_implementor(declared_interface, singleton);
           } else {
@@ -2266,7 +2265,7 @@ bool GraphBuilder::invoke(ciMethod* target, ciKlass* holder,
     }
 
     // Skip profiling for synthetic bci for now
-    if (is_profiling() && bci >= 0) {
+    if (is_profiling() && bci() >= 0) {
       // Note that we'd collect profile data in this method if we wanted it.
       compilation()->set_would_profile(true);
 
@@ -2285,13 +2284,13 @@ bool GraphBuilder::invoke(ciMethod* target, ciKlass* holder,
 
   Invoke* result = new Invoke(code, result_type, recv, args, target, state_before);
   // push result
-  append_with_bci(result, bci);
+  append_split(result);
 
   if (result_type != voidType) {
     push(result_type, round_fp(result));
   }
-  if (profile_return() && result_type->is_object_kind()) {
-    profile_return_type(result, target);
+  if (profile_return() && result_type->is_object_kind() && bci() >= 0) {
+    profile_return_type(result, target, method(), bci());
   }
   return false;
 }
@@ -2303,7 +2302,7 @@ bool GraphBuilder::invoke(Bytecodes::Code code) {
   ciKlass*              holder = stream()->get_declared_method_holder();
   const Bytecodes::Code bc_raw = stream()->cur_bc_raw();
 
-  return invoke(target, holder, declared_signature, will_link, code, bc_raw, bci());
+  return invoke(target, holder, declared_signature, will_link, code, bc_raw);
 }
 
 void GraphBuilder::invoke_monitor(Value x, int bci, Bytecodes::Code code, int count, bool needs_cont,
@@ -2340,12 +2339,12 @@ void GraphBuilder::invoke_monitor(Value x, int bci, Bytecodes::Code code, int co
     str.force_bci(bci, code);
     scope_data()->set_stream(&str);
   } else {
-    assert(bci == this->bci(), "");
   }
+  assert(bci == this->bci(), "");
   assert(!_skip_block, "");
 #endif
   apush(x);
-  ipush(append_with_bci(new Constant(new IntConstant(count)), bci));
+  ipush(append(new Constant(new IntConstant(count))));
   if (code == Bytecodes::_monitorenter) {
     assert(declared_signature->count() == 2, "");
     assert(exception == nullptr, "");
@@ -2355,23 +2354,24 @@ void GraphBuilder::invoke_monitor(Value x, int bci, Bytecodes::Code code, int co
     assert(declared_signature->count() == 3, "");
     apush(exception);
   }
-  bool inlined = invoke(target, holder, declared_signature, will_link, bc_raw, bc_raw, bci, cont);
+  bool inlined = invoke(target, holder, declared_signature, will_link, bc_raw, bc_raw, cont);
+#if 0
   if (!inlined) {
     BAILOUT("monitor not inlined");
   }
+#endif
 #if 1
   assert(_block == cont || cont == nullptr || cont->number_of_preds() == 0, "disconnected?");
 // Keep on truckin'!
   assert(!_skip_block, "");
   assert(last() != block()->end(), "");
   assert(last()->as_BlockEnd() == nullptr, "");
-  assert(last()->as_Goto() == nullptr, "");
 
   assert(bci == this->bci(), "");
   scope_data()->set_stream(cur_stream);
   assert(bci < 0 || bci == this->bci(), "");
 
-  assert(state()->is_same(cont->state()), "");
+  assert(!inlined || state()->is_same(cont->state()), "");
 
 // XXX FIXME, need to protect against trying to jump to next_bci(), when bci == -1,
 // especially at method exit
@@ -2489,15 +2489,11 @@ void GraphBuilder::monitorenter(Value x, int bci) {
 void GraphBuilder::monitorexit(Value x, int bci, Value exception) {
   if (ObjectMonitorMode::java()) {
     int locks = state()->total_locks_size() - 1;
-#if 1
     bool needs_cont = true;
-#endif
     invoke_monitor(x, bci, Bytecodes::_monitorexit, locks, needs_cont, exception);
     CHECK_BAILOUT();
-#if 1
     state()->unlock();
-assert(locks == state()->total_locks_size(), "");
-#endif
+    assert(locks == state()->total_locks_size(), "");
     return;
   }
   append_with_bci(new MonitorExit(x, state()->unlock()), bci);
@@ -2687,7 +2683,7 @@ XHandlers* GraphBuilder::handle_exception(Instruction* instruction) {
           BAILOUT_("exception handler covers itself", exception_handlers);
         }
         assert(entry->bci() == h->handler_bci(), "must match");
-        assert(entry->bci() == -1 || entry == cur_scope_data->block_at(entry->bci()), "blocks must correspond");
+        assert(entry->bci() < 0 || entry == cur_scope_data->block_at(entry->bci()), "blocks must correspond");
 
         // xhandler start with an empty expression stack
         if (!found) {
@@ -3375,11 +3371,7 @@ BlockBegin* GraphBuilder::header_block(BlockBegin* entry, BlockBegin::Flag f, Va
         append(new Constant(new InstanceConstant(method()->holder()->java_mirror()))) :
         _state->local_at(0);
     }
-#if 0
-    int epilogue_bci = SynchronizationEntryBCI;
-#else
     int epilogue_bci = UnwindBci;
-#endif
     BlockBegin* epilogue = new BlockBegin(epilogue_bci);
     // FIXME this is a duplicate of inlining code, refactor?
     inline_sync_entry(lock, epilogue);
@@ -3938,7 +3930,7 @@ void GraphBuilder::build_graph_for_intrinsic(ciMethod* callee, bool ignore_retur
   }
 
   if (callee != method() && profile_return() && result_type->is_object_kind()) {
-    profile_return_type(result, callee);
+    profile_return_type(result, callee, method(), bci());
   }
 }
 
@@ -4053,11 +4045,7 @@ void GraphBuilder::inline_sync_entry(Value lock, BlockBegin* sync_handler) {
   }
 
   if (lock != nullptr) {
-#if 0
-    int bci = SynchronizationEntryBCI;
-#else
-    int bci = -14;
-#endif
+    int bci = BeforeBci;
     monitorenter(lock, bci);
 #ifdef ASSERT
     if (!ObjectMonitorMode::java()) {
@@ -4065,6 +4053,8 @@ void GraphBuilder::inline_sync_entry(Value lock, BlockBegin* sync_handler) {
       _last->set_needs_null_check(false);
     }
 #endif
+    // bci = BeforeBciLocked;
+    // bci = 0;
   }
 
   sync_handler->set(BlockBegin::exception_entry_flag);
@@ -4101,6 +4091,7 @@ void GraphBuilder::fill_sync_handler(BlockBegin* sync_handler) {
 #endif
 
   int bci = sync_handler->bci();
+  assert(bci == UnwindBci, "wrong pseudo-bci");
   assert(method()->is_synchronized() || compilation()->env()->dtrace_method_probes(), "nothing to do");
 
   XHandler* h = scope_data()->xhandlers()->remove_last();
@@ -4126,19 +4117,24 @@ void GraphBuilder::fill_sync_handler(BlockBegin* sync_handler) {
     Value lock = method()->is_static() ?
       append_with_bci(new Constant(new InstanceConstant(method()->holder()->java_mirror())), bci) :
       _state->local_at(0);
-    assert(lock->is_linked(), "");
-    assert(lock->is_equal(state()->lock_at(0)), "oops!");
+#if 1
+assert(!lock->can_be_linked() || lock->block() == block(), "");
+#endif
+#if 1
+assert(!lock->can_be_linked() || lock->is_linked(), "");
+assert(lock == state()->lock_at(0) || lock->is_equal(state()->lock_at(0)), "");
+#endif
     assert(state()->locks_size() == 1, "wrong lock count");
 
     // exit the monitor in the context of the synchronized method
-    // push exception and pass to compiledMonitorExitWithException, which simplies
+    // pass exception to compiledMonitorExitUnwind, which simplies
     // deoptimization.
-    apush(exception);
     monitorexit(lock, bci, exception);
-  } else {
-    // throw from bci < 0, which has no handler
-    apush(exception);
+    CHECK_BAILOUT();
   }
+  // throw from bci < 0, which has no handler
+  bci = AfterExceptionBci;
+  apush(exception);
   throw_op(bci);
 
   BlockEnd* end = last()->as_BlockEnd();
@@ -4362,11 +4358,7 @@ assert(bci() >= 0, "");
       lock = callee->is_static() ? append(new Constant(new InstanceConstant(callee->holder()->java_mirror())))
 				 : state()->local_at(0);
     }
-#if 0
-    int handler_bci = SynchronizationEntryBCI;
-#else
-    int handler_bci = -16;
-#endif
+    int handler_bci = UnwindBci;
     exc_handler = new BlockBegin(handler_bci);
     inline_sync_entry(lock, exc_handler);
   }
@@ -4536,6 +4528,7 @@ XXX NO, need to remove from worklist first!
   // Fill the exception handler for synchronized methods with instructions
   if (callee->is_synchronized() && exc_handler->state() != nullptr) {
     fill_sync_handler(exc_handler);
+    CHECK_BAILOUT_(false);
   }
   pop_scope();
 
@@ -4895,13 +4888,7 @@ void GraphBuilder::profile_call(ciMethod* callee, Value recv, ciKlass* known_hol
 }
 
 void GraphBuilder::profile_return_type(Value ret, ciMethod* callee, ciMethod* m, int invoke_bci) {
-  assert((m == nullptr) == (invoke_bci < 0), "invalid method and invalid bci together");
-  if (m == nullptr) {
-    m = method();
-  }
-  if (invoke_bci < 0) {
-    invoke_bci = bci();
-  }
+  assert(invoke_bci >= 0, "illegal bci");
   ciMethodData* md = m->method_data_or_null();
   ciProfileData* data = md->bci_to_data(invoke_bci);
   if (data != nullptr && (data->is_CallTypeData() || data->is_VirtualCallTypeData())) {

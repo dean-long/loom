@@ -1,0 +1,3 @@
+    // exit the monitor in the context of the synchronized method
+    monitorexit(lock, bci);
+

@@ -756,6 +756,14 @@ address SharedRuntime::compute_compiled_exc_handler(CompiledMethod* cm, address 
     // synchronized methods since the unlock path isn't represented in
     // the bytecodes.
     t = table.entry_for(catch_pco, -1, 0);
+#if 1
+    if (t == nullptr) {
+      t = table.entry_for(catch_pco, -16, 0); // FIXME
+    }
+    if (t == nullptr) {
+      t = table.entry_for(catch_pco, UnwindBci, 0);
+    }
+#endif
   }
 
 #ifdef COMPILER1
