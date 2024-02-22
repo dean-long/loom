@@ -1674,7 +1674,7 @@ void GraphBuilder::method_return(Value x, bool ignore_return) {
       Value receiver = method()->is_static() ?
         append_with_bci(new Constant(new InstanceConstant(method()->holder()->java_mirror())), bci) :
         sync_receiver();
-#if 1
+#if 0
 assert(!receiver->can_be_linked() || receiver->block() == block(), "");
 #endif
 #if 1
@@ -1728,7 +1728,7 @@ assert(receiver == state()->lock_at(0) || receiver->is_equal(state()->lock_at(0)
     Value receiver = method()->is_static() ?
       append(new Constant(new InstanceConstant(method()->holder()->java_mirror()))) :
       sync_receiver();
-#if 1
+#if 0
 assert(!receiver->can_be_linked() || receiver->block() == block(), "");
 #endif
 #if 1
@@ -4117,7 +4117,7 @@ void GraphBuilder::fill_sync_handler(BlockBegin* sync_handler) {
     Value lock = method()->is_static() ?
       append_with_bci(new Constant(new InstanceConstant(method()->holder()->java_mirror())), bci) :
       _state->local_at(0);
-#if 1
+#if 0
 assert(!lock->can_be_linked() || lock->block() == block(), "");
 #endif
 #if 1

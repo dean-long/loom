@@ -272,6 +272,7 @@ address TemplateInterpreterGenerator::generate_return_entry_for_monitor(
   __ restore_bcp();
   __ restore_locals();
 
+  TosState state = vtos;
   // This assumes monitorenter and exit both have the same args size.
   // FIXME: pass in Method* or ars size.
   //   __ lea(rsp, Address(rsp, -parm_size * Interpreter::stackElementScale()));
@@ -286,14 +287,18 @@ address TemplateInterpreterGenerator::generate_return_entry_for_monitor(
       if (next_bc == Bytecodes::_athrow) {
         // compiledMonitorExitWithException(Object, int, Object exception)
   __ warn("XXX monitorexit with exception");
-	__ pop_ptr(rbx);
-	__ pop_i();
-	__ pop_ptr();
-	__ push_ptr(rbx);
+        state = atos;
+        __ pop(state); // exception objects
+        __ pop_i(rbx);
+        __ pop_ptr(rbx);
       } else {
         //  compiledMonitorExit(Object, int)
-	__ pop_i();
-	__ pop_ptr();
+        __ pop_i();
+        __ pop_ptr();
+        if (next_bc == Bytecodes::_areturn) {
+          state = atos;
+          __ pop(state);
+        }
       }
     }
   } else {
