@@ -445,37 +445,43 @@ int LIR_Assembler::emit_unwind_handler() {
 
   __ bind(_unwind_handler_entry);
   __ verify_not_null_oop(rax);
-  if (method()->is_synchronized() || compilation()->env()->dtrace_method_probes()) {
-    __ mov(rbx, rax);  // Preserve the exception (rbx is always callee-saved)
-  }
 
-  // Perform needed unlocking
   MonitorExitStub* stub = nullptr;
-  if (method()->is_synchronized()) {
-    monitor_address(0, FrameMap::rax_opr);
-    stub = new MonitorExitStub(FrameMap::rax_opr, true, 0);
-    if (LockingMode == LM_MONITOR) {
-      __ jmp(*stub->entry());
-    } else {
-      __ unlock_object(rdi, rsi, rax, *stub->entry());
+  if (!ObjectMonitorMode::java()) {
+
+    if (method()->is_synchronized() || compilation()->env()->dtrace_method_probes()) {
+      __ mov(rbx, rax);  // Preserve the exception (rbx is always callee-saved)
     }
-    __ bind(*stub->continuation());
-  }
 
-  if (compilation()->env()->dtrace_method_probes()) {
+    // Perform needed unlocking
+    if (method()->is_synchronized()) {
+      assert(!ObjectMonitorMode::java(), "use catchall exception handler");
+      monitor_address(0, FrameMap::rax_opr);
+      stub = new MonitorExitStub(FrameMap::rax_opr, true, 0);
+      if (LockingMode == LM_MONITOR) {
+	__ jmp(*stub->entry());
+      } else {
+	__ unlock_object(rdi, rsi, rax, *stub->entry());
+      }
+      __ bind(*stub->continuation());
+    }
+
+    if (compilation()->env()->dtrace_method_probes()) {
 #ifdef _LP64
-    __ mov(rdi, r15_thread);
-    __ mov_metadata(rsi, method()->constant_encoding());
+      __ mov(rdi, r15_thread);
+      __ mov_metadata(rsi, method()->constant_encoding());
 #else
-    __ get_thread(rax);
-    __ movptr(Address(rsp, 0), rax);
-    __ mov_metadata(Address(rsp, sizeof(void*)), method()->constant_encoding(), noreg);
+      __ get_thread(rax);
+      __ movptr(Address(rsp, 0), rax);
+      __ mov_metadata(Address(rsp, sizeof(void*)), method()->constant_encoding(), noreg);
 #endif
-    __ call(RuntimeAddress(CAST_FROM_FN_PTR(address, SharedRuntime::dtrace_method_exit)));
-  }
+      __ call(RuntimeAddress(CAST_FROM_FN_PTR(address, SharedRuntime::dtrace_method_exit)));
+    }
 
-  if (method()->is_synchronized() || compilation()->env()->dtrace_method_probes()) {
-    __ mov(rax, rbx);  // Restore the exception
+    if (method()->is_synchronized() || compilation()->env()->dtrace_method_probes()) {
+      __ mov(rax, rbx);  // Restore the exception
+    }
+
   }
 
   // remove the activation and dispatch to the unwind handler

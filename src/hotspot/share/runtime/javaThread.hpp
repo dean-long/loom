@@ -1210,6 +1210,11 @@ public:
   static bool has_oop_handles_to_release() {
     return _oop_handle_list != nullptr;
   }
+
+ public:
+  // JOM
+  objArrayOop java_lock_stack() const;
+  int java_lock_stack_pos() const;
 };
 
 inline JavaThread* JavaThread::current_or_null() {

@@ -337,7 +337,7 @@ class LinearScan : public CompilationResourceObj {
   // methods used for debug information computation
   void init_compute_debug_info();
 
-  MonitorValue*  location_for_monitor_index(int monitor_index);
+  MonitorValue*  location_for_monitor_index(ScopeValue* obj, int monitor_index);
   LocationValue* location_for_name(int name, Location::Type loc_type);
   void set_oop(OopMap* map, VMReg name) {
     if (map->legal_vm_reg_name(name)) {

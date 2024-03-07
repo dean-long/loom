@@ -885,6 +885,11 @@ void BCEscapeAnalyzer::iterate_one_block(ciBlock *blk, StateInfo &state, Growabl
           }
         }
         break;
+      case Bytecodes::_monitorenter:
+      case Bytecodes::_monitorexit:
+        assert(!ObjectMonitorMode::java(), "TODO: implement ciBytecodeStream \"virtual bytecodes\" mode?");
+        state.apop();
+        break;
       case Bytecodes::_invokevirtual:
       case Bytecodes::_invokespecial:
       case Bytecodes::_invokestatic:
@@ -969,10 +974,6 @@ void BCEscapeAnalyzer::iterate_one_block(ciBlock *blk, StateInfo &state, Growabl
       case Bytecodes::_instanceof:
         set_method_escape(state.apop());
         state.spush();
-        break;
-      case Bytecodes::_monitorenter:
-      case Bytecodes::_monitorexit:
-        state.apop();
         break;
       case Bytecodes::_wide:
         ShouldNotReachHere();

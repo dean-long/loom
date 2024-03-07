@@ -102,6 +102,8 @@ class vframe: public ResourceObj {
   virtual void print_value() const;
   virtual void print();
 #endif
+
+  void add_locks(int locks) { _reg_map.add_locks(locks); }
 };
 
 class MonitorInfo;
@@ -133,6 +135,12 @@ class javaVFrame: public vframe {
     assert(vf == nullptr || vf->is_java_frame(), "must be java frame");
     return (javaVFrame*) vf;
   }
+#if 1
+  static const javaVFrame* cast(const vframe* vf) {
+    assert(vf == nullptr || vf->is_java_frame(), "must be java frame");
+    return (javaVFrame*) vf;
+  }
+#endif
 
   // Return an array of monitors locked by this frame in the youngest to oldest order
   GrowableArray<MonitorInfo*>* locked_monitors();

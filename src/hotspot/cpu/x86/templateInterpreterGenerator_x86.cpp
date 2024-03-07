@@ -256,7 +256,9 @@ address TemplateInterpreterGenerator::generate_return_entry_for(TosState state, 
   return entry;
 }
 
-address TemplateInterpreterGenerator::generate_return_entry_for_monitor(int step) {
+address TemplateInterpreterGenerator::generate_return_entry_for_monitor(
+  Bytecodes::Code code, bool from_compiled, bool skip_over, Bytecodes::Code next_bc)
+{
   assert(ObjectMonitorMode::java(), "must be");
   address entry = __ pc();
 
@@ -270,12 +272,51 @@ address TemplateInterpreterGenerator::generate_return_entry_for_monitor(int step
   __ restore_bcp();
   __ restore_locals();
 
-  __ pop(rax);
-
-  // clear system java
-  __ decrementl(Address(r15_thread, JavaThread::system_java_offset()), 1);
-
-  __ dispatch_next(vtos, step, false);
+  TosState state = vtos;
+  // This assumes monitorenter and exit both have the same args size.
+  // FIXME: pass in Method* or ars size.
+  //   __ lea(rsp, Address(rsp, -parm_size * Interpreter::stackElementScale()));
+  //
+  if (from_compiled) {
+    if (code == Bytecodes::_monitorenter) {
+      //  compiledMonitorEnter(Object, int)
+      __ pop_i();
+      __ pop_ptr();
+    } else {
+      assert(code == Bytecodes::_monitorexit, "unsupported bytecode");
+      if (next_bc == Bytecodes::_athrow) {
+        // compiledMonitorExitWithException(Object, int, Object exception)
+  __ warn("XXX monitorexit with exception");
+        state = atos;
+        __ pop(state); // exception objects
+        __ pop_i(rbx);
+        __ pop_ptr(rbx);
+      } else {
+        //  compiledMonitorExit(Object, int)
+        __ pop_i();
+        __ pop_ptr();
+        if (next_bc == Bytecodes::_areturn) {
+          state = atos;
+          __ pop(state);
+        }
+      }
+    }
+  } else {
+    __ pop(rax);
+    // clear system java
+    __ decrementl(Address(r15_thread, JavaThread::system_java_offset()), 1);
+  }
+  if (next_bc == Bytecodes::_illegal) {
+    int step = skip_over ? Bytecodes::length_for(code) : 0;
+    __ dispatch_next(vtos, step);
+  } else {
+    __ movl(rbx, next_bc);
+#if 0
+    __ dispatch_only(vtos, false);
+#else
+    __ dispatch_only_via(vtos, Interpreter::safept_table(vtos), true, true);
+#endif
+  }
 
   return entry;
 }
@@ -340,7 +381,11 @@ address TemplateInterpreterGenerator::generate_deopt_entry_for(TosState state, i
     __ bind(L);
   }
   if (continuation == nullptr) {
+#if 0
     __ dispatch_next(state, step);
+#else
+    __ dispatch_next_via(state, Interpreter::safept_table(state), step, true);
+#endif
   } else {
     __ jump_to_entry(continuation);
   }

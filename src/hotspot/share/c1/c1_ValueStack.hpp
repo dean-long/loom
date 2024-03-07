@@ -48,6 +48,9 @@ class ValueStack: public CompilationResourceObj {
   Values   _locals;                              // the locals
   Values   _stack;                               // the expression stack
   Values*  _locks;                               // the monitor stack (holding the locked values)
+  // XXX FIXME: consider replacing with special bci value
+  bool     _at_monitor_enter;
+  int      _in_monitor_enter_count;
 
   Value check(ValueTag tag, Value t) {
     assert(tag == t->type()->tag() || tag == objectTag && t->type()->tag() == addressTag, "types must correspond");
@@ -204,6 +207,14 @@ class ValueStack: public CompilationResourceObj {
   int lock  (Value obj);
   int unlock();
   Value lock_at(int i) const                     { return _locks->at(i); }
+
+  void set_at_monitor_enter(bool b) {
+    assert(b != _at_monitor_enter, "already set!");
+    _at_monitor_enter = b;
+  }
+  bool at_monitor_enter() const                  { return _at_monitor_enter; }
+
+  int  in_monitor_enter_count() const            { return _in_monitor_enter_count; }
 
   // SSA form IR support
   void setup_phi_for_stack(BlockBegin* b, int index);

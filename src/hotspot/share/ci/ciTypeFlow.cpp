@@ -646,10 +646,10 @@ void ciTypeFlow::StateVector::do_getstatic(ciBytecodeStream* str) {
 // ------------------------------------------------------------------
 // ciTypeFlow::StateVector::do_invoke
 void ciTypeFlow::StateVector::do_invoke(ciBytecodeStream* str,
-                                        bool has_receiver) {
-  bool will_link;
-  ciSignature* declared_signature = nullptr;
-  ciMethod* callee = str->get_method(will_link, &declared_signature);
+                                        ciMethod* callee,
+                                        ciSignature* declared_signature,
+                                        bool has_receiver, bool will_link)
+{
   assert(declared_signature != nullptr, "cannot be null");
   if (!will_link) {
     // We weren't able to find the method.
@@ -709,6 +709,26 @@ void ciTypeFlow::StateVector::do_invoke(ciBytecodeStream* str,
       }
     }
   }
+}
+
+// ------------------------------------------------------------------
+// ciTypeFlow::StateVector::do_invoke
+void ciTypeFlow::StateVector::do_invoke(ciBytecodeStream* str,
+                                        bool has_receiver) {
+  ciSignature* declared_signature = nullptr;
+  bool will_link;
+  ciMethod* callee = str->get_method(will_link, &declared_signature);
+  assert(declared_signature != nullptr, "cannot be null");
+  do_invoke(str, callee, declared_signature, has_receiver, will_link);
+}
+
+// ------------------------------------------------------------------
+// ciTypeFlow::StateVector::do_invoke_monitor
+void ciTypeFlow::StateVector::do_invoke_monitor(ciBytecodeStream* str, bool enter) {
+  ciSignature* declared_signature = nullptr;
+  bool will_link;
+  ciMethod* callee = CURRENT_ENV->get_monitor_method(will_link, &declared_signature, enter);
+  do_invoke(str, callee, declared_signature, false, will_link);
 }
 
 // ------------------------------------------------------------------
@@ -923,13 +943,28 @@ bool ciTypeFlow::StateVector::apply_one_bytecode(ciBytecodeStream* str) {
     }
   case Bytecodes::_monitorenter:
     {
-      pop_object();
+      if (ObjectMonitorMode::java()) {
+#if 1
+        // FIXME: why is this necessary?
+        os::breakpoint();
+#endif
+        do_invoke_monitor(str, true);
+      } else {
+        pop_object();
+      }
       set_monitor_count(monitor_count() + 1);
       break;
     }
   case Bytecodes::_monitorexit:
     {
-      pop_object();
+      if (ObjectMonitorMode::java()) {
+#if 1
+        // FIXME: why is this necessary?
+#endif
+        do_invoke_monitor(str, false);
+      } else {
+        pop_object();
+      }
       assert(monitor_count() > 0, "must be a monitor to exit from");
       set_monitor_count(monitor_count() - 1);
       break;

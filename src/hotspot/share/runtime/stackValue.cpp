@@ -294,6 +294,7 @@ address StackValue::stack_value_address(const frame* fr, const RegisterMapT* reg
 
 BasicLock* StackValue::resolve_monitor_lock(const frame* fr, Location location) {
   assert(location.is_stack(), "for now we only look at the stack");
+  assert(location.type() == Location::normal, "invalid location");
   int word_offset = location.stack_offset() / wordSize;
   // (stack picture)
   // high: [     ]  word_offset + 1

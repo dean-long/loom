@@ -194,7 +194,7 @@ class CompileTask : public CHeapObj<mtCompiler> {
 
 private:
   static void  print_impl(outputStream* st, Method* method, int compile_id, int comp_level,
-                                      bool is_osr_method = false, int osr_bci = -1, bool is_blocking = false,
+                                      bool is_osr_method = false, int osr_bci = InvocationEntryBci, bool is_blocking = false,
                                       const char* msg = nullptr, bool short_form = false, bool cr = true,
                                       jlong time_queued = 0, jlong time_started = 0);
 

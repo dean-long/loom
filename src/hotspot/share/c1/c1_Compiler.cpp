@@ -232,6 +232,7 @@ bool Compiler::is_intrinsic_supported(const methodHandle& method) {
   case vmIntrinsics::_counterTime:
 #endif
   case vmIntrinsics::_getObjectSize:
+  case vmIntrinsics::_fillInLockRecord:
     break;
   case vmIntrinsics::_blackhole:
     break;

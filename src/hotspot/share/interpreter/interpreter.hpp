@@ -67,7 +67,7 @@ class InterpreterCodelet: public Stub {
 
   // Debugging
   void    verify();
-  void    print_on(outputStream* st) const;
+  void    print_on(outputStream* st, bool decode) const;
   void    print() const;
 
   // Interpreter-specific initialization

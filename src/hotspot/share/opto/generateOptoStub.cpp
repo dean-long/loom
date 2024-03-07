@@ -58,10 +58,16 @@ void GraphKit::gen_stub(address C_function,
   // Make a map, with JVM state
   uint parm_cnt = jdomain->cnt();
   uint max_map = MAX2(2*parm_cnt+1, jrange->cnt());
+#if 0
+  int entry_bci = InvocationEntryBci;
   // %%% SynchronizationEntryBCI is redundant; use InvocationEntryBci in interfaces
   assert(SynchronizationEntryBCI == InvocationEntryBci, "");
+#else
+  int entry_bci = UnknownBci;
+  entry_bci = -90;
+#endif
   JVMState* jvms = new (C) JVMState(0);
-  jvms->set_bci(InvocationEntryBci);
+  jvms->set_bci(entry_bci);
   jvms->set_monoff(max_map);
   jvms->set_scloff(max_map);
   jvms->set_endoff(max_map);

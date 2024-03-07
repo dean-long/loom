@@ -617,7 +617,7 @@ void CodeBlob::dump_for_addr(address addr, outputStream* st, bool verbose) const
     InterpreterCodelet* i = Interpreter::codelet_containing(addr);
     if (i != nullptr) {
       st->print_cr(INTPTR_FORMAT " is at code_begin+%d in an Interpreter codelet", p2i(addr), (int)(addr - i->code_begin()));
-      i->print_on(st);
+      i->print_on(st, false);
       return;
     }
     if (Interpreter::contains(addr)) {

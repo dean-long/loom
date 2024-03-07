@@ -578,6 +578,7 @@ public:
   void do_Return         (Return*          x);
   void do_Throw          (Throw*           x);
   void do_Base           (Base*            x);
+  void do_Start          (Start*           x);
   void do_OsrEntry       (OsrEntry*        x);
   void do_ExceptionObject(ExceptionObject* x);
   void do_RoundFP        (RoundFP*         x);
@@ -761,6 +762,7 @@ void NullCheckVisitor::do_LookupSwitch   (LookupSwitch*    x) {}
 void NullCheckVisitor::do_Return         (Return*          x) {}
 void NullCheckVisitor::do_Throw          (Throw*           x) { nce()->clear_last_explicit_null_check(); }
 void NullCheckVisitor::do_Base           (Base*            x) {}
+void NullCheckVisitor::do_Start          (Start*           x) {}
 void NullCheckVisitor::do_OsrEntry       (OsrEntry*        x) {}
 void NullCheckVisitor::do_ExceptionObject(ExceptionObject* x) { nce()->handle_ExceptionObject(x); }
 void NullCheckVisitor::do_RoundFP        (RoundFP*         x) {}
@@ -1119,6 +1121,8 @@ void NullCheckEliminator::handle_AccessMonitor(AccessMonitor* x) {
       tty->print_cr("Eliminated AccessMonitor %d's null check for value %d", x->id(), obj->id());
     }
     x->set_needs_null_check(false);
+  } else if (ObjectMonitorMode::java()) {
+    assert(JOMDebugC1BOL, "why are we here?"); 
   } else {
     set_put(obj);
     if (PrintNullCheckElimination) {

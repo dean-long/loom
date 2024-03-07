@@ -135,17 +135,21 @@ Bytecodes::Code ciBytecodeStream::next_wide_or_table(Bytecodes::Code bc) {
 // ------------------------------------------------------------------
 // ciBytecodeStream::reset_to_bci
 void ciBytecodeStream::reset_to_bci( int bci ) {
+#if 1
+assert(bci >= 0, "pseudo-bci %d", bci);
+#endif
   _bc_start=_was_wide=0;
   _pc = _start+bci;
 }
 
 // ------------------------------------------------------------------
 // ciBytecodeStream::force_bci
-void ciBytecodeStream::force_bci(int bci) {
+void ciBytecodeStream::force_bci(int bci, Bytecodes::Code code) {
   if (bci < 0) {
     reset_to_bci(0);
     _bc_start = _start + bci;
-    _bc = EOBC();
+    _bc = code;
+    _raw_bc = code;
   } else {
     reset_to_bci(bci);
     next();
@@ -469,6 +473,18 @@ ciMethod* ciBytecodeStream::get_method(bool& will_link, ciSignature* *declared_s
 // constant pool cache at the current bci.
 bool ciBytecodeStream::has_appendix() {
   VM_ENTRY_MARK;
+  if (ObjectMonitorMode::java()) {
+    if (cur_bci() < 0) {
+      // SynchronizationEntryBCI
+      return false;
+    }
+    if (!Bytecodes::is_invoke(cur_bc())) {
+      assert(cur_bc() == Bytecodes::_monitorenter ||
+             cur_bc() == Bytecodes::_monitorexit
+             || Bytecodes::is_return(cur_bc()), "");
+      return false;
+    }
+  }
   constantPoolHandle cpool(THREAD, _method->get_Method()->constants());
   return ConstantPool::has_appendix_at_if_loaded(cpool, get_method_index());
 }
@@ -543,4 +559,3 @@ int ciBytecodeStream::get_method_signature_index(const constantPoolHandle& cpool
     return cpool->signature_ref_index_at(name_and_type_index);
   )
 }
-

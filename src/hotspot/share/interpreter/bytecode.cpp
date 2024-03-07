@@ -129,6 +129,20 @@ int Bytecode_invoke::size_of_parameters() const {
   return asc.size() + (has_receiver() ? 1 : 0);
 }
 
+int Bytecode_invoke::index() const {
+  assert(!is_special(), "");
+  return Bytecode_member_ref::index();
+}
+
+int Bytecode_invoke::pool_index() const {
+  assert(!is_special(), "");
+  return Bytecode_member_ref::pool_index();
+}
+
+Symbol* Bytecode_invoke::signature() const {
+  assert(!is_special(), "fake it for monitorenter/exit");
+  return Bytecode_member_ref::signature();
+}
 
 Symbol* Bytecode_member_ref::klass() const {
   return constants()->klass_ref_at_noresolve(index(), _code);
@@ -152,6 +166,19 @@ BasicType Bytecode_member_ref::result_type() const {
 
 
 Method* Bytecode_invoke::static_target(TRAPS) {
+  if (is_special()) {
+assert(false, "");
+    CallInfo callinfo;
+    if (is_monitorenter()) {
+      LinkResolver::resolve_monitorenter(callinfo, CHECK_NULL);
+    } else if (is_monitorexit()) {
+      LinkResolver::resolve_monitorexit(callinfo, CHECK_NULL);
+    } else {
+      ShouldNotReachHere();
+    }
+    return callinfo.selected_method();
+  }
+
   constantPoolHandle constants(THREAD, this->constants());
 
   Bytecodes::Code bc = invoke_code();

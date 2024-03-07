@@ -66,12 +66,12 @@ class DebugToken; // Opaque datatype for stored:
                   //  - GrowableArray<ScopeValue*>
                   //  - GrowableArray<MonitorValue*>
 
-// Alias for InvocationEntryBci.
+// Similar meaning as InvocationEntryBci.
 // Both constants are used for a pseudo-BCI which refers
 // to the state just _before_ a method is entered.
 // SynchronizationEntryBCI is used where the emphasis
 // is on the implicit monitorenter of a synchronized method.
-const int SynchronizationEntryBCI = InvocationEntryBci;
+const int SynchronizationEntryBCI = SynchronizationEntryBci;
 
 class DIR_Chunk; // private class, a nugget of collected information
 

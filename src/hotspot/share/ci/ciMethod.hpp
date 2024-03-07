@@ -216,10 +216,12 @@ class ciMethod : public ciMetadata {
   int highest_osr_comp_level();
 
   Bytecodes::Code java_code_at_bci(int bci) {
+    assert(bci >= 0, "illegal bci");
     address bcp = code() + bci;
     return Bytecodes::java_code_at(nullptr, bcp);
   }
   Bytecodes::Code raw_code_at_bci(int bci) {
+    assert(bci >= 0, "illegal bci");
     address bcp = code() + bci;
     return Bytecodes::code_at(nullptr, bcp);
   }

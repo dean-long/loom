@@ -235,11 +235,17 @@ StackValue *compiledVFrame::create_stack_value(ScopeValue *sv) const {
 }
 
 BasicLock* compiledVFrame::resolve_monitor_lock(Location location) const {
+  if (location.type() == Location::invalid) {
+    return nullptr;
+  }
   return StackValue::resolve_monitor_lock(&_fr, location);
 }
 
 
 GrowableArray<MonitorInfo*>* compiledVFrame::monitors() const {
+#if 1
+  assert(register_map()->monitors(), "");
+#endif
   // Natives has no scope
   if (scope() == nullptr) {
     CompiledMethod* nm = code();
@@ -263,22 +269,84 @@ GrowableArray<MonitorInfo*>* compiledVFrame::monitors() const {
     return new GrowableArray<MonitorInfo*>(0);
   }
   GrowableArray<MonitorInfo*>* result = new GrowableArray<MonitorInfo*>(monitors->length());
+#if 1
+  JavaThread* current = JavaThread::current();
+  objArrayOop lock_stack = nullptr;
+  int lock_stack_size = -1;
+  int num_monitors = monitors->length();
+  bool can_trust_lock_stack = false;
+  if (ObjectMonitorMode::java()) {
+    //enum state = current->monitor_transaction_state();
+    can_trust_lock_stack = scope()->can_trust_lock_stack();
+  }
+#endif
   for (int index = 0; index < monitors->length(); index++) {
     MonitorValue* mv = monitors->at(index);
     ScopeValue*   ov = mv->owner();
-    StackValue *owner_sv = create_stack_value(ov); // it is an oop
-    if (ov->is_object() && owner_sv->obj_is_scalar_replaced()) { // The owner object was scalar replaced
+    oop obj = nullptr;
+    address stack_address = nullptr;
+
+    // There are multiple places to find the monitor owner oop,
+    // in order of preference:
+    // 1. mv->owner() object oop or stack location oop
+    // 2. mv->basic_lock() oop
+    // 3. Java lock stack (JOM, not always trusted)
+    // Get owner from 1) and check against 2) and 3)
+
+    if (ov->is_object()) {
+      obj = ov->as_ObjectValue()->value()();
+    } else if (ov->is_constant_oop()) {
+      obj = ov->as_ConstantOopReadValue()->value()();
+    } else {
+      stack_address = StackValue::stack_value_address(&_fr, register_map(), ov);
+      assert(stack_address != nullptr, "bad monitor owner location");
+      assert(current->is_in_full_stack((address)stack_address), "wrong thread?");
+      obj = *(oop*)stack_address;
+      assert(obj != nullptr, "null monitor oop");
+    }
+    BasicLock* bl = resolve_monitor_lock(mv->basic_lock());
+    BasicObjectLock* bol = (BasicObjectLock*)bl;
+      if (ObjectMonitorMode::java()) {
+	if (can_trust_lock_stack) {
+	  // get oop value from Java lock stack
+	  lock_stack = current->java_lock_stack();
+	  lock_stack_size = current->java_lock_stack_pos();
+	  assert(lock_stack_size <= lock_stack->length(), "illegal lockStackPos");
+
+	  int callee_locks = register_map()->callee_locks();
+	  int lock_stack_index = lock_stack_size - num_monitors + index - callee_locks;
+	  assert(lock_stack_index >=0 && lock_stack_index < lock_stack_size, "");
+	  oop obj2 = lock_stack->obj_at(lock_stack_index);
+	  assert(obj == nullptr || obj == obj2, "oop mismatch");
+
+	  if (bol != nullptr) {
+	    assert(*(intptr_t *)bol->lock() == lock_stack_index, "BOL index %d != %d",
+		   (int)*(intptr_t *)bol->lock(), lock_stack_index);
+	    assert(obj2 == bol->obj(), "oop mismatch");
+	  }
+	}
+      }
+      assert(obj == nullptr || bol == nullptr || obj == bol->obj(), "BOL oop mismatch");
+#if 1
+{
+  // XXX FIXME shouldn't be needed.  MonitorInfo takes a raw oop
+  StackValue *owner_sv = create_stack_value(ov); // it is an oop
+  assert(obj == owner_sv->get_obj()(), "monitor owner mismatch");
+}
+#endif
+    assert(mv->eliminated() == (obj == nullptr), "eliminated iff owner is null");
+    if (ov->is_object() && obj == nullptr) { // The owner object was scalar replaced
       assert(mv->eliminated(), "monitor should be eliminated for scalar replaced object");
       // Put klass for scalar replaced object.
       ScopeValue* kv = ((ObjectValue *)ov)->klass();
       assert(kv->is_constant_oop(), "klass should be oop constant for scalar replaced object");
       Handle k(Thread::current(), ((ConstantOopReadValue*)kv)->value()());
       assert(java_lang_Class::is_instance(k()), "must be");
-      result->push(new MonitorInfo(k(), resolve_monitor_lock(mv->basic_lock()),
-                                   mv->eliminated(), true));
+      result->push(new MonitorInfo(k(), bl, mv->eliminated(), true));
     } else {
-      result->push(new MonitorInfo(owner_sv->get_obj()(), resolve_monitor_lock(mv->basic_lock()),
-                                   mv->eliminated(), false));
+      assert(!mv->eliminated(), "monitor should not be eliminated");
+      assert(obj != nullptr, "null monitor owner");
+      result->push(new MonitorInfo(obj, bl, mv->eliminated(), false));
     }
   }
 
@@ -318,6 +386,9 @@ compiledVFrame::compiledVFrame(const frame* fr, const RegisterMap* reg_map, Java
 }
 
 compiledVFrame* compiledVFrame::at_scope(int decode_offset, int vframe_id) {
+#if 1
+  assert(!register_map()->monitors(), "");
+#endif
   if (scope()->decode_offset() != decode_offset) {
     ScopeDesc* scope = this->scope()->at_offset(decode_offset);
     return new compiledVFrame(frame_pointer(), register_map(), thread(), scope, vframe_id);
@@ -401,9 +472,18 @@ vframe* compiledVFrame::sender() const {
     assert(nm->is_native_method(), "must be native");
     return vframe::sender();
   } else {
-    return scope()->is_top()
+    vframe* vf = scope()->is_top()
       ? vframe::sender()
       : new compiledVFrame(&f, register_map(), thread(), scope()->sender(), vframe_id() + 1);
+#if 1
+    if (register_map()->monitors()) {
+      GrowableArray<MonitorValue*>* monitors = scope()->monitors();
+      if (monitors != nullptr) {
+        vf->add_locks(monitors->length());
+      }
+    }
+#endif
+    return vf;
   }
 }
 

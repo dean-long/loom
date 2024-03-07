@@ -73,6 +73,7 @@ class RegisterMap : public StackObj {
   enum class UpdateMap { skip, include };
   enum class ProcessFrames { skip, include };
   enum class WalkContinuation { skip, include };
+  enum class Monitors { skip, include };
  private:
   intptr_t*         _location[reg_count];     // Location of registers (intptr_t* looks better than address in the debugger)
   LocationValidType _location_valid[location_valid_size];
@@ -80,11 +81,13 @@ class RegisterMap : public StackObj {
   JavaThread*       _thread;                  // Reference to current thread
   stackChunkHandle  _chunk;                   // The current continuation stack chunk, if any
   int               _chunk_index;             // incremented whenever a new chunk is set
+  int               _callee_locks;            // locks held by callee frames
 
   bool              _update_map;              // Tells if the register map need to be
                                               // updated when traversing the stack
   bool              _process_frames;          // Should frames be processed by stack watermark barriers?
   bool              _walk_cont;               // whether to walk frames on a continuation stack
+  bool              _monitors;                // whether to support monitor info
 
   NOT_PRODUCT(bool  _skip_missing;) // ignore missing registers
   NOT_PRODUCT(bool  _async;)        // walking frames asynchronously, at arbitrary points
@@ -97,9 +100,14 @@ class RegisterMap : public StackObj {
 
  public:
   DEBUG_ONLY(intptr_t* _update_for_id;) // Assert that RegisterMap is not updated twice for same frame
-  RegisterMap(JavaThread *thread, UpdateMap update_map, ProcessFrames process_frames, WalkContinuation walk_cont);
+  RegisterMap(JavaThread *thread, UpdateMap update_map, ProcessFrames process_frames, WalkContinuation walk_cont,
+              Monitors monitors = Monitors::skip);
   RegisterMap(oop continuation, UpdateMap update_map);
   RegisterMap(const RegisterMap* map);
+  void add_locks(int new_locks) {
+    _callee_locks += new_locks;
+  }
+  int callee_locks() const { assert(_monitors, ""); return _callee_locks; }
 
   address location(VMReg reg, intptr_t* sp) const {
     int index = reg->value() / location_valid_type_size;
@@ -140,6 +148,7 @@ class RegisterMap : public StackObj {
   bool update_map()     const { return _update_map; }
   bool process_frames() const { return _process_frames; }
   bool walk_cont()      const { return _walk_cont; }
+  bool monitors()       const { return _monitors; }
 
   void set_walk_cont(bool value) { _walk_cont = value; }
 

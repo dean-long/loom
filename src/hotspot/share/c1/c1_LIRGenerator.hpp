@@ -272,6 +272,7 @@ class LIRGenerator: public InstructionVisitor, public BlockClosure {
   void do_update_CRC32C(Intrinsic* x);
   void do_vectorizedMismatch(Intrinsic* x);
   void do_blackhole(Intrinsic* x);
+  void do_fillInLockRecord(Intrinsic* x);
 
  public:
   LIR_Opr call_runtime(BasicTypeArray* signature, LIRItemList* args, address entry, ValueType* result_type, CodeEmitInfo* info);
@@ -479,7 +480,7 @@ class LIRGenerator: public InstructionVisitor, public BlockClosure {
                         Value arg, LIR_Opr& mdp, bool not_null, ciKlass* signature_at_call_k,
                         ciKlass* callee_signature_k);
   void profile_arguments(ProfileCall* x);
-  void profile_parameters(Base* x);
+  void profile_parameters(ValueStack* state);
   void profile_parameters_at_call(ProfileCall* x);
   LIR_Opr mask_boolean(LIR_Opr array, LIR_Opr value, CodeEmitInfo*& null_check_info);
 
@@ -577,6 +578,7 @@ class LIRGenerator: public InstructionVisitor, public BlockClosure {
   virtual void do_Return         (Return*          x);
   virtual void do_Throw          (Throw*           x);
   virtual void do_Base           (Base*            x);
+  virtual void do_Start          (Start*           x);
   virtual void do_OsrEntry       (OsrEntry*        x);
   virtual void do_ExceptionObject(ExceptionObject* x);
   virtual void do_RoundFP        (RoundFP*         x);

@@ -452,6 +452,21 @@ ciMethod* ciEnv::get_method_from_handle(Method* method) {
   return get_metadata(method)->as_method();
 }
 
+//
+ciMethod* ciEnv::get_monitor_method(bool enter, bool with_exception) {
+  if (enter) {
+    return get_method(Universe::compiledMonitorEnter());
+  } else if (!with_exception) {
+    return get_method(Universe::compiledMonitorExit());
+  } else {
+    return get_method(Universe::compiledMonitorExitWithException());
+  }
+}
+
+ciKlass* ciEnv::get_monitor_klass() {
+  return get_klass(vmClasses::Object_klass());
+}
+
 // ------------------------------------------------------------------
 // ciEnv::check_klass_accessiblity
 //
@@ -1746,4 +1761,18 @@ void ciEnv::dump_inline_data(int compile_id) {
 
 void ciEnv::dump_replay_data_version(outputStream* out) {
   out->print_cr("version %d", REPLAY_VERSION);
+}
+
+ciMethod* ciEnv::get_monitor_method(bool& will_link, ciSignature* *declared_signature_result,
+                                    bool enter, bool with_exception) {
+  VM_ENTRY_MARK;
+  ciMethod* m = get_monitor_method(enter, with_exception);
+  will_link = m->is_loaded();
+  (*declared_signature_result) = m->signature();
+  return m;
+}
+
+ciKlass* ciEnv::get_monitor_holder() {
+  VM_ENTRY_MARK;
+  return get_monitor_klass();
 }

@@ -43,6 +43,13 @@ ScopeDesc::ScopeDesc(const CompiledMethod* code, PcDesc* pd, bool ignore_objects
   _has_ea_local_in_scope = ignore_objects ? false : pd->has_ea_local_in_scope();
   _arg_escape    = ignore_objects ? false : pd->arg_escape();
   decode_body();
+#if 1
+  // FIXME: assumes there are no callee frames
+  _callee = nullptr;
+#ifdef ASSERT
+  _can_trust_lock_stack = true; // FIXME: valid assumption?
+#endif
+#endif
 }
 
 
@@ -56,6 +63,11 @@ void ScopeDesc::initialize(const ScopeDesc* parent, int decode_offset) {
   _has_ea_local_in_scope = parent->has_ea_local_in_scope();
   _arg_escape    = false;
   decode_body();
+  _callee = parent->method();
+#ifdef ASSERT
+  _can_trust_lock_stack = parent->_can_trust_lock_stack && !in_monitor_enter() && !in_monitor_exit();
+  assert(_bci >= 0 || in_monitor_enter() || in_monitor_exit(), "");
+#endif
 }
 
 ScopeDesc::ScopeDesc(const ScopeDesc* parent) {
@@ -63,6 +75,10 @@ ScopeDesc::ScopeDesc(const ScopeDesc* parent) {
 }
 
 ScopeDesc::ScopeDesc(const ScopeDesc* parent, int decode_offset) {
+#if 1
+  assert(false, "FIXME");
+  assert(parent->_sender_decode_offset == decode_offset, "FIXME: in monitor op?");
+#endif
   initialize(parent, decode_offset);
 }
 

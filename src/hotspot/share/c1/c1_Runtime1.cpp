@@ -761,8 +761,7 @@ JRT_BLOCK_ENTRY(void, Runtime1::monitorenter(JavaThread* current, oopDesc* obj, 
   SharedRuntime::monitor_enter_helper(obj, LockingMode == LM_LIGHTWEIGHT ? nullptr : lock->lock(), current);
 JRT_END
 
-
-JRT_LEAF(void, Runtime1::monitorexit(JavaThread* current, BasicObjectLock* lock))
+JRT_LEAF(void, Runtime1::monitorexit(JavaThread* current, oopDesc* obj, BasicObjectLock* lock))
   assert(current == JavaThread::current(), "pre-condition");
 #ifndef PRODUCT
   if (PrintC1Statistics) {
@@ -770,7 +769,6 @@ JRT_LEAF(void, Runtime1::monitorexit(JavaThread* current, BasicObjectLock* lock)
   }
 #endif
   assert(current->last_Java_sp(), "last_Java_sp must be set");
-  oop obj = lock->obj();
   assert(oopDesc::is_oop(obj), "must be null or an object");
   SharedRuntime::monitor_exit_helper(obj, lock->lock(), current);
 JRT_END

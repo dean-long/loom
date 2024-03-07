@@ -53,6 +53,11 @@ bool CallGenerator::is_inlined_method_handle_intrinsic(JVMState* jvms, ciMethod*
 }
 
 bool CallGenerator::is_inlined_method_handle_intrinsic(ciMethod* caller, int bci, ciMethod* m) {
+#ifdef C2_PATCH
+  if (m->is_object_monitorenter_exit()) {
+    return false;
+  }
+#endif
   ciMethod* symbolic_info = caller->get_method_at_bci(bci);
   return is_inlined_method_handle_intrinsic(symbolic_info, m);
 }
@@ -152,11 +157,7 @@ JVMState* DirectCallGenerator::generate(JVMState* jvms) {
   }
 
   CallStaticJavaNode* call = new CallStaticJavaNode(kit.C, tf(), target, method());
-#ifndef C2_PATCH
   if (is_inlined_method_handle_intrinsic(jvms, method())) {
-#else
-  if (!method()->is_object_monitorenter_exit() && is_inlined_method_handle_intrinsic(jvms, method())) {
-#endif
     // To be able to issue a direct call and skip a call to MH.linkTo*/invokeBasic adapter,
     // additional information about the method being invoked should be attached
     // to the call site to make resolution logic work

@@ -897,6 +897,10 @@ void InterpreterMacroAssembler::dispatch_only(TosState state, bool generate_poll
   dispatch_base(state, Interpreter::dispatch_table(state), true, generate_poll);
 }
 
+void InterpreterMacroAssembler::dispatch_only_via(TosState state, address* table, bool verifyoop, bool generate_poll) {
+  dispatch_base(state, table, verifyoop, generate_poll);
+}
+
 void InterpreterMacroAssembler::dispatch_only_normal(TosState state) {
   dispatch_base(state, Interpreter::normal_table(state));
 }
@@ -906,12 +910,16 @@ void InterpreterMacroAssembler::dispatch_only_noverify(TosState state) {
 }
 
 
-void InterpreterMacroAssembler::dispatch_next(TosState state, int step, bool generate_poll) {
+void InterpreterMacroAssembler::dispatch_next_via(TosState state, address* table, int step, bool generate_poll) {
   // load next bytecode (load before advancing _bcp_register to prevent AGI)
   load_unsigned_byte(rbx, Address(_bcp_register, step));
   // advance _bcp_register
   increment(_bcp_register, step);
-  dispatch_base(state, Interpreter::dispatch_table(state), true, generate_poll);
+  dispatch_base(state, table, true, generate_poll);
+}
+
+void InterpreterMacroAssembler::dispatch_next(TosState state, int step, bool generate_poll) {
+  dispatch_next_via(state, Interpreter::dispatch_table(state), step, generate_poll);
 }
 
 void InterpreterMacroAssembler::dispatch_via(TosState state, address* table) {
@@ -2190,8 +2198,12 @@ void InterpreterMacroAssembler::java_lock_object() {
   ExternalAddress fetch_addr((address) Universe::object_monitorEnter_addr());
   movptr(method, fetch_addr);
 
+#if 1
+if (ProfileJOMCalls > 1) {
   profile_call(rax);
   profile_arguments_type(rax, rbx, LP64_ONLY(r13) NOT_LP64(rsi), false);
+}
+#endif
 
   jump_from_interpreted(rbx, rdx);
 
@@ -2260,8 +2272,12 @@ void InterpreterMacroAssembler::java_unlock_object(Register lock_reg) {
   ExternalAddress fetch_addr((address) Universe::object_monitorExit_addr());
   movptr(method, fetch_addr);
 
+#if 1
+if (ProfileJOMCalls > 1) {
   profile_call(rax);
   profile_arguments_type(rax, rbx, LP64_ONLY(r13) NOT_LP64(rsi), false);
+}
+#endif
 
   jump_from_interpreted(rbx, rdx);
 
@@ -2314,8 +2330,12 @@ void InterpreterMacroAssembler::java_unlock_all_objects() {
   ExternalAddress fetch_addr((address) Universe::object_monitorExitAll_addr());
   movptr(method, fetch_addr);
 
+#if 0
+if (ProfileJOMCalls > 2) {
   profile_call(rax);
   profile_arguments_type(rax, rbx, LP64_ONLY(r13) NOT_LP64(rsi), false);
+}
+#endif
 
   jump_from_interpreted(rbx, rdx);
 

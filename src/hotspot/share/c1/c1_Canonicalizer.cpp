@@ -855,6 +855,7 @@ void Canonicalizer::do_LookupSwitch(LookupSwitch* x) {
 void Canonicalizer::do_Return         (Return*          x) {}
 void Canonicalizer::do_Throw          (Throw*           x) {}
 void Canonicalizer::do_Base           (Base*            x) {}
+void Canonicalizer::do_Start          (Start*           x) {}
 void Canonicalizer::do_OsrEntry       (OsrEntry*        x) {}
 void Canonicalizer::do_ExceptionObject(ExceptionObject* x) {}
 void Canonicalizer::do_RoundFP        (RoundFP*         x) {}

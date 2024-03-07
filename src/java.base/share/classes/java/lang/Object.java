@@ -26,6 +26,7 @@
 package java.lang;
 
 import jdk.internal.misc.Blocker;
+import jdk.internal.vm.annotation.ForceInline;
 import jdk.internal.vm.annotation.IntrinsicCandidate;
 import jdk.internal.vm.annotation.ReservedStackAccess;
 
@@ -623,18 +624,6 @@ public class Object {
         }
     }
 
-    /* C2_PATCH
-    @ReservedStackAccess
-    private static final void compilerMonitorExit(Object o) {
-        monitorExit(o, 0x8L);
-    }
-
-    @ReservedStackAccess
-    private static final void compilerMonitorEnter(Object o) {
-        monitorEnter(o, 0x8L);
-    }
-    */
-
     /** Entry point for monitor exit from the VM (bytecode and ObjectLocker) */
     @ReservedStackAccess
     private static final void monitorExit(Object o) {
@@ -667,6 +656,93 @@ public class Object {
         catch (Throwable t) {
             MonitorSupport.abortException("monitorExitAll", t);
         }
+    }
+
+    @IntrinsicCandidate
+    private static final native void fillInLockRecord(int depth, Object lock, int lockStackPos);
+
+    /** Entry point for monitor entry from compiled code
+     */
+    // @SystemEntry
+    @ForceInline
+    @ReservedStackAccess
+    private static final int compiledMonitorEnter(Object o, int depth) {
+        int pos = Thread.currentThread().lockStackPos;
+        fillInLockRecord(depth, o, pos);
+
+        // TODO: enter System Java mode
+        monitorEnter(o);
+        // TODO: exit System Java mode
+        return pos;
+    }
+
+    // @SystemEntry @RetainArguments
+    // FIXME TODO System Java
+    // We could do this deep inside the callee if fully inlined,
+    // as a replacement for keeping track of transaction state,
+    // but exception handler can only deal with one state,
+    // locked or unlocked, not both, unless we create dual
+    // entry points...
+    //        callerStateUnlock(depth, o);
+    // What about advancing the bci in the caller instead, so we
+    // get the correct exception handler?
+    //        callerStateUnlockAndAdvanceBci(depth, o); OR
+    //        callerSetAfterState(depth, o);
+    //        method(TransactionState state) {  ...  state = COMPLETE; }
+    // OR @TransactionStateArg int method(...int state) { state = 0; ...; state = done; }
+    // @TransactionEntry @TransactionFrame method(TransactionState state)
+    /** Entry point for monitor exit from compiled code
+     */
+    @ForceInline
+    @ReservedStackAccess
+    private static final void compiledMonitorExit(Object o, int depth) {
+        try {
+          monitorExit(o);
+        } catch (Throwable t) {
+            MonitorSupport.abortException("compiledMonitorExit", t);
+        }
+    }
+
+    /** Entry point for monitor exit from compiled code
+     */
+    // @SystemEntry @RetainArguments
+    // @TransactionEntry @TransactionFrame method(TransactionState state)
+    @ForceInline
+    @ReservedStackAccess
+    private static final Throwable compiledMonitorExitUnwind(Object o, int depth, Throwable pending) throws Throwable {
+        MonitorSupport.log("compiledMonitorExitUnwind obj "+o+" : "+pending);
+        compiledMonitorExit(o, depth);
+        return pending;
+    }
+
+    // @CompilerMacro
+    // @SignaturePolymorphic?
+    // @IntrinsicCandidate
+    private static final Object compiledReturnObject(Object o, int depth, Object value) throws Throwable {
+        compiledMonitorExit(o, depth);
+        return value;
+    }
+    private static final int compiledReturnInt(Object o, int depth, int value) throws Throwable {
+        compiledMonitorExit(o, depth);
+        return value;
+    }
+    private static final long compiledReturnLong(Object o, int depth, long value) throws Throwable {
+        compiledMonitorExit(o, depth);
+        return value;
+    }
+    private static final float compiledReturnFloat(Object o, int depth, float value) throws Throwable {
+        compiledMonitorExit(o, depth);
+        return value;
+    }
+    private static final double compiledReturnDouble(Object o, int depth, double value) throws Throwable {
+        compiledMonitorExit(o, depth);
+        return value;
+    }
+
+    // @CompilerMacro
+    private static final Throwable compiledUnwind(Object o, int depth, Throwable pending) throws Throwable {
+        compiledMonitorExit(o, depth);
+        throw pending;
     }
 
     /** Entry point for uninterruptible monitor wait from the VM

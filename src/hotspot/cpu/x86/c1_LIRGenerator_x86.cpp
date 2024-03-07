@@ -310,7 +310,7 @@ void LIRGenerator::do_MonitorEnter(MonitorEnter* x) {
   set_no_result(x);
 
   // "lock" stores the address of the monitor stack slot, so this is not an oop
-  LIR_Opr lock = new_register(T_INT);
+  LIR_Opr lock = new_register(T_ADDRESS);
 
   CodeEmitInfo* info_for_exception = nullptr;
   if (x->needs_null_check()) {

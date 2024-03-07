@@ -76,19 +76,7 @@ CallGenerator* Compile::call_generator(ciMethod* callee, int vtable_index, bool 
   ciMethod*       caller      = jvms->method();
   int             bci         = jvms->bci();
   Bytecodes::Code bytecode    = caller->java_code_at_bci(bci);
-#ifndef C2_PATCH
   ciMethod*       orig_callee = caller->get_method_at_bci(bci);
-#else
-  ciMethod*       orig_callee = NULL;
-
-  if (bytecode == Bytecodes::_monitorenter) {
-    orig_callee = ciEnv::current()->Object_klass()->find_method(ciSymbols::monitorEnter_name(), ciSymbols::object_void_signature()); // object_void_signature
-  } else if (bytecode == Bytecodes::_monitorexit) {
-    orig_callee = ciEnv::current()->Object_klass()->find_method(ciSymbols::monitorExit_name(), ciSymbols::object_void_signature()); // object_void_signature
-  } else {
-    orig_callee = caller->get_method_at_bci(bci);
-  }
-#endif
 
   const bool is_virtual_or_interface = (bytecode == Bytecodes::_invokevirtual) ||
                                        (bytecode == Bytecodes::_invokeinterface) ||
@@ -567,11 +555,7 @@ private:
 public:
   LockCallInfo(ciBytecodeStream& stream, bool enter) : _stream(stream), _enter(enter) {
     _klass = ciEnv::current()->Object_klass();
-    if (enter) {
-      _target = _klass->find_method(ciSymbols::monitorEnter_name(), ciSymbols::object_void_signature()); // object_void_signature
-    } else {
-      _target = _klass->find_method(ciSymbols::monitorExit_name(), ciSymbols::object_void_signature()); // object_void_signature
-    }
+    _target = ciEnv::current()->get_monitor_method(entry);
   }
 
   virtual bool will_link() const { return true; }

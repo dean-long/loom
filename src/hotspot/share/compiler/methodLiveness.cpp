@@ -359,10 +359,16 @@ MethodLiveness::BasicBlock *MethodLiveness::work_list_get() {
 
 MethodLivenessResult MethodLiveness::get_liveness_at(int entry_bci) {
   int bci = entry_bci;
+  bool retain_receiver = false;
   bool is_entry = false;
-  if (entry_bci == InvocationEntryBci) {
+  if (entry_bci < 0) {
     is_entry = true;
     bci = 0;
+  }
+  // JOM needs the receiver for synchronized return, including the
+  // injected unwind exception handler block.
+  if ((is_entry || ObjectMonitorMode::java()) && method()->is_synchronized() && !method()->is_static()) {
+    retain_receiver = true;
   }
 
   MethodLivenessResult answer;
@@ -382,7 +388,7 @@ MethodLivenessResult MethodLiveness::get_liveness_at(int entry_bci) {
 
     answer = block->get_liveness_at(method(), bci);
 
-    if (is_entry && method()->is_synchronized() && !method()->is_static()) {
+    if (retain_receiver) {
       // Synchronized methods use the receiver once on entry.
       answer.at_put(0, true);
     }

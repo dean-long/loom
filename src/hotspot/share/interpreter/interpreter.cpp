@@ -63,10 +63,10 @@ void InterpreterCodelet::initialize(const char* description, Bytecodes::Code byt
 
 void InterpreterCodelet::verify() {}
 
-void InterpreterCodelet::print_on(outputStream* st) const {
+void InterpreterCodelet::print_on(outputStream* st, bool decode) const {
   ttyLocker ttyl;
 
-  if (PrintInterpreter) {
+  if (decode) {
     st->cr();
     st->print_cr("----------------------------------------------------------------------");
   }
@@ -76,13 +76,13 @@ void InterpreterCodelet::print_on(outputStream* st) const {
   st->print_cr("[" INTPTR_FORMAT ", " INTPTR_FORMAT "]  %d bytes",
                 p2i(code_begin()), p2i(code_end()), code_size());
 
-  if (PrintInterpreter) {
+  if (decode) {
     st->cr();
     Disassembler::decode(code_begin(), code_end(), st NOT_PRODUCT(COMMA &_asm_remarks));
   }
 }
 
-void InterpreterCodelet::print() const { print_on(tty); }
+void InterpreterCodelet::print() const { print_on(tty, PrintInterpreter); }
 
 CodeletMark::CodeletMark(InterpreterMacroAssembler*& masm,
                          const char* description,
